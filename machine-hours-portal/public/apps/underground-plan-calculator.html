@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Underground Plan Distance Calculator</title>
+<script src="../vendor/pdfjs/pdf.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f4; --bg3: #eeece8;
+    --text: #1a1a1a; --text2: #6b6b6b; --text3: #a3a3a3;
+    --border: rgba(0,0,0,0.12); --border2: rgba(0,0,0,0.22);
+    --info-bg: #e6f1fb; --info-text: #185fa5;
+    --danger-text: #a32d2d;
+    --radius: 8px; --radius-lg: 12px;
+    --green: #22c55e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1b; --bg2: #252524; --bg3: #2e2e2c;
+      --text: #f0ede8; --text2: #a3a19b; --text3: #6b6967;
+      --border: rgba(255,255,255,0.12); --border2: rgba(255,255,255,0.22);
+      --info-bg: #042c53; --info-text: #85b7eb;
+      --danger-text: #f09595;
+    }
+  }
+  html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg3); color: var(--text); }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  #toolbar {
+    display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+    border-bottom: 0.5px solid var(--border); background: var(--bg);
+    flex-wrap: wrap; flex-shrink: 0;
+  }
+  .tool-group { display: flex; align-items: center; gap: 4px; }
+  .sep { width: 0.5px; height: 22px; background: var(--border); margin: 0 4px; }
+  button.tb, label.tb {
+    display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px;
+    border: 0.5px solid var(--border2); border-radius: var(--radius);
+    background: transparent; cursor: pointer; font-size: 13px; color: var(--text);
+    font-family: inherit; transition: background 0.12s; white-space: nowrap;
+  }
+  button.tb:hover, label.tb:hover { background: var(--bg2); }
+  button.tb.active { background: var(--bg2); border-color: var(--border2); }
+  button.tb svg, label.tb svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  #file-input { display: none; }
+
+  #scale-bar {
+    display: flex; align-items: center; gap: 6px; padding: 5px 9px;
+    background: var(--bg2); border-radius: var(--radius);
+    border: 0.5px solid var(--border); font-size: 13px; flex-wrap: wrap;
+  }
+  #scale-bar input[type=number], #scale-bar select {
+    padding: 3px 6px; font-size: 13px; background: var(--bg);
+    border: 0.5px solid var(--border2); border-radius: 6px; color: var(--text);
+    font-family: inherit;
+  }
+  #scale-bar input[type=number] { width: 68px; }
+  #scale-px { width: 60px; background: var(--bg2) !important; color: var(--text2) !important; }
+
+  #canvas-area { flex: 1; overflow: hidden; position: relative; background: var(--bg3); min-height: 0; }
+  #canvas-wrap { position: absolute; inset: 0; overflow: auto; }
+  #canvas-container { position: relative; display: inline-block; min-width: 100%; min-height: 100%; }
+  #pdf-canvas { display: block; }
+  #measure-canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+  #cursor-canvas { position: absolute; top: 0; left: 0; pointer-events: auto; cursor: none; }
+
+  #drop-hint {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+    color: var(--text2); font-size: 14px; pointer-events: none;
+  }
+  #drop-hint .icon { font-size: 48px; color: var(--text3); line-height: 1; }
+  #drop-hint .sub { font-size: 12px; color: var(--text3); }
+
+  #sidebar {
+    border-top: 0.5px solid var(--border); background: var(--bg);
+    padding: 10px 14px; max-height: 190px; overflow-y: auto; flex-shrink: 0;
+  }
+  .sidebar-title { font-size: 11px; color: var(--text2); margin-bottom: 8px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+  .m-item {
+    display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+    border-radius: var(--radius); margin-bottom: 4px;
+    border: 0.5px solid var(--border); font-size: 13px;
+  }
+  .m-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .m-label { flex: 1; color: var(--text2); }
+  .m-val { font-weight: 500; }
+  .m-px { font-size: 11px; color: var(--text3); margin-left: 4px; }
+  .m-del { cursor: pointer; color: var(--text3); font-size: 18px; line-height: 1; padding: 0 2px; }
+  .m-del:hover { color: var(--danger-text); }
+  #status { font-size: 12px; color: var(--text2); margin-left: auto; }
+
+  .page-nav { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text2); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div class="tool-group">
+      <label class="tb" for="file-input">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Load PDF / Image
+      </label>
+      <input type="file" id="file-input" accept=".pdf,image/*">
+    </div>
+    <div class="sep"></div>
+    <div class="tool-group">
+      <button class="tb active" id="btn-line" title="Click two points to measure a straight line">
+        <svg viewBox="0 0 24 24"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/></svg>
+        Line
+      </button>
+      <button class="tb" id="btn-poly" title="Click points along a route — double-click to finish">
+        <svg viewBox="0 0 24 24"><polyline points="3 17 8 7 14 13 19 5"/><circle cx="3" cy="17" r="2"/><circle cx="8" cy="7" r="2"/><circle cx="14" cy="13" r="2"/><circle cx="19" cy="5" r="2"/></svg>
+        Polyline
+      </button>
+      <button class="tb" id="btn-pan" title="Pan / scroll the canvas">
+        <svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+        Pan
+      </button>
+    </div>
+    <div class="sep"></div>
+    <div id="scale-bar">
+      <svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:var(--text2);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0"><path d="M2 12h20M2 12l4-4M2 12l4 4M22 12l-4-4M22 12l-4 4"/></svg>
+      Scale:
+      <input type="number" id="scale-real" value="10" min="0.001" step="any">
+      <select id="scale-unit">
+        <option value="m">m</option>
+        <option value="km">km</option>
+        <option value="ft">ft</option>
+        <option value="cm">cm</option>
+      </select>
+      per
+      <input type="number" id="scale-px" value="" min="1" placeholder="px" readonly>
+      px
+      <button class="tb" id="btn-calibrate" title="Draw a line over a known-distance reference on the plan">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
+        Calibrate
+      </button>
+    </div>
+    <div class="sep"></div>
+    <div class="page-nav">
+      <button class="tb" id="btn-prev">&#8249;</button>
+      <span id="page-info">—</span>
+      <button class="tb" id="btn-next">&#8250;</button>
+    </div>
+    <div class="sep"></div>
+    <button class="tb" id="btn-zoom-in" title="Zoom in">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+    </button>
+    <button class="tb" id="btn-zoom-out" title="Zoom out">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+    </button>
+    <button class="tb" id="btn-export-csv" title="Export measurements as CSV">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export CSV
+    </button>
+    <button class="tb" id="btn-clear" title="Clear all measurements">
+      <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      Clear
+    </button>
+    <span id="status"></span>
+  </div>
+
+  <div id="canvas-area">
+    <div id="canvas-wrap">
+      <div id="canvas-container">
+        <canvas id="pdf-canvas"></canvas>
+        <canvas id="measure-canvas"></canvas>
+        <canvas id="cursor-canvas"></canvas>
+      </div>
+    </div>
+    <div id="drop-hint">
+      <div class="icon">📄</div>
+      <div>Load a PDF or image to begin</div>
+      <div class="sub">Supports PDF, PNG, JPG &mdash; drag &amp; drop or click Load PDF / Image</div>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div class="sidebar-title">Measurements</div>
+    <div id="measurements-list"><span style="font-size:13px;color:var(--text3)">No measurements yet.</span></div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = '../vendor/pdfjs/pdf.worker.min.js';
+
+const COLORS = ['#378ADD','#1D9E75','#D85A30','#9F3FBA','#BA7517','#E24B4A','#0F6E56','#712B13'];
+const GREEN = '#22c55e';
+
+let pdfDoc = null, pageNum = 1, zoom = 1.5;
+let measurements = [], colorIdx = 0;
+let mode = 'line', calibrating = false;
+let scalePxPerUnit = null;
+let drawing = false, pts = [], previewPt = null;
+let panMode = false, panStart = null, panOrigin = null;
+let imgSrc = null;
+
+const pdfCanvas = document.getElementById('pdf-canvas');
+const mCanvas = document.getElementById('measure-canvas');
+const cCanvas = document.getElementById('cursor-canvas');
+const ctx = pdfCanvas.getContext('2d');
+const mCtx = mCanvas.getContext('2d');
+const cCtx = cCanvas.getContext('2d');
+const hint = document.getElementById('drop-hint');
+const wrap = document.getElementById('canvas-wrap');
+
+function setStatus(t) { document.getElementById('status').textContent = t; }
+
+function resizeCanvases(w, h) {
+  [pdfCanvas, mCanvas, cCanvas].forEach(c => { c.width = w; c.height = h; });
+}
+
+function renderPage(n) {
+  if (!pdfDoc) return;
+  pdfDoc.getPage(n).then(page => {
+    const vp = page.getViewport({ scale: zoom });
+    resizeCanvases(vp.width, vp.height);
+    page.render({ canvasContext: ctx, viewport: vp }).promise.then(() => redraw());
+    document.getElementById('page-info').textContent = n + ' / ' + pdfDoc.numPages;
+    hint.style.display = 'none';
+  });
+}
+
+function loadImage(src) {
+  imgSrc = src;
+  const img = new Image();
+  img.onload = () => {
+    resizeCanvases(img.width * zoom, img.height * zoom);
+    ctx.drawImage(img, 0, 0, img.width * zoom, img.height * zoom);
+    document.getElementById('page-info').textContent = '1 / 1';
+    hint.style.display = 'none';
+    redraw();
+  };
+  img.src = src;
+}
+
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  if (file.type === 'application/pdf') {
+    const fr = new FileReader();
+    fr.onload = ev => {
+      pdfjsLib.getDocument({ data: ev.target.result }).promise.then(doc => {
+        pdfDoc = doc; imgSrc = null; pageNum = 1; measurements = []; renderPage(pageNum); renderList();
+      });
+    };
+    fr.readAsArrayBuffer(file);
+  } else {
+    pdfDoc = null;
+    const url = URL.createObjectURL(file);
+    measurements = [];
+    loadImage(url);
+    renderList();
+  }
+});
+
+document.getElementById('canvas-area').addEventListener('dragover', e => e.preventDefault());
+document.getElementById('canvas-area').addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0]; if (!file) return;
+  const dt = new DataTransfer(); dt.items.add(file);
+  document.getElementById('file-input').files = dt.files;
+  document.getElementById('file-input').dispatchEvent(new Event('change'));
+});
+
+document.getElementById('btn-prev').onclick = () => {
+  if (pdfDoc && pageNum > 1) { pageNum--; measurements = []; renderPage(pageNum); renderList(); }
+};
+document.getElementById('btn-next').onclick = () => {
+  if (pdfDoc && pageNum < pdfDoc.numPages) { pageNum++; measurements = []; renderPage(pageNum); renderList(); }
+};
+document.getElementById('btn-zoom-in').onclick = () => {
+  zoom = Math.min(zoom + 0.25, 6);
+  pdfDoc ? renderPage(pageNum) : (imgSrc && loadImage(imgSrc));
+};
+document.getElementById('btn-zoom-out').onclick = () => {
+  zoom = Math.max(zoom - 0.25, 0.25);
+  pdfDoc ? renderPage(pageNum) : (imgSrc && loadImage(imgSrc));
+};
+document.getElementById('btn-clear').onclick = () => {
+  measurements = []; drawing = false; pts = []; redraw(); renderList();
+};
+
+document.getElementById('btn-export-csv').onclick = () => {
+  if (!measurements.length) { alert('No measurements to export.'); return; }
+  const unit = document.getElementById('scale-unit').value;
+  const rows = ['Label,Type,Pixels,Real Distance (' + unit + ')'];
+  measurements.forEach(m => {
+    const r = pxToReal(m.pxLen);
+    rows.push([m.label, m.type, m.pxLen.toFixed(2), r ? r.val.toFixed(4) : 'no scale'].join(','));
+  });
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'measurements.csv'; a.click();
+};
+
+function setMode(m) {
+  mode = m; panMode = (m === 'pan');
+  ['btn-line','btn-poly','btn-pan'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById('btn-' + m).classList.add('active');
+}
+
+document.getElementById('btn-line').onclick = () => { calibrating = false; setMode('line'); setStatus(''); document.getElementById('btn-calibrate').classList.remove('active'); };
+document.getElementById('btn-poly').onclick = () => { calibrating = false; setMode('poly'); setStatus(''); document.getElementById('btn-calibrate').classList.remove('active'); };
+document.getElementById('btn-pan').onclick = () => { calibrating = false; setMode('pan'); setStatus(''); document.getElementById('btn-calibrate').classList.remove('active'); };
+
+document.getElementById('btn-calibrate').onclick = () => {
+  calibrating = !calibrating;
+  document.getElementById('btn-calibrate').classList.toggle('active', calibrating);
+  if (calibrating) { drawing = false; pts = []; setStatus('Calibrate: click two points on a known-distance reference line'); }
+  else setStatus('');
+};
+
+function getPos(e) {
+  const r = cCanvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left), y: (e.clientY - r.top) };
+}
+function dist(a, b) { return Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2); }
+function polyLen(pts) { let d=0; for(let i=1;i<pts.length;i++) d+=dist(pts[i-1],pts[i]); return d; }
+
+function pxToReal(px) {
+  if (!scalePxPerUnit) return null;
+  return { val: px / scalePxPerUnit, unit: document.getElementById('scale-unit').value };
+}
+function formatDist(px) {
+  const r = pxToReal(px);
+  return r ? r.val.toFixed(3) + ' ' + r.unit : px.toFixed(1) + ' px (no scale)';
+}
+
+function drawGreenCursor(p) {
+  cCtx.clearRect(0, 0, cCanvas.width, cCanvas.height);
+  if (!p) return;
+  cCtx.save();
+  cCtx.strokeStyle = GREEN; cCtx.lineWidth = 1.5;
+  if (panMode) {
+    cCtx.beginPath(); cCtx.arc(p.x, p.y, 9, 0, Math.PI*2); cCtx.stroke();
+    cCtx.fillStyle = GREEN; cCtx.globalAlpha = 0.2;
+    cCtx.beginPath(); cCtx.arc(p.x, p.y, 9, 0, Math.PI*2); cCtx.fill();
+  } else {
+    const l=11, g=4;
+    cCtx.beginPath();
+    cCtx.moveTo(p.x-l-g, p.y); cCtx.lineTo(p.x-g, p.y);
+    cCtx.moveTo(p.x+g, p.y);   cCtx.lineTo(p.x+l+g, p.y);
+    cCtx.moveTo(p.x, p.y-l-g); cCtx.lineTo(p.x, p.y-g);
+    cCtx.moveTo(p.x, p.y+g);   cCtx.lineTo(p.x, p.y+l+g);
+    cCtx.stroke();
+    cCtx.fillStyle = GREEN;
+    cCtx.beginPath(); cCtx.arc(p.x, p.y, 3, 0, Math.PI*2); cCtx.fill();
+  }
+  cCtx.restore();
+}
+
+cCanvas.addEventListener('mouseleave', () => { cCtx.clearRect(0,0,cCanvas.width,cCanvas.height); });
+
+cCanvas.addEventListener('mousedown', e => {
+  const p = getPos(e);
+  if (panMode) { panStart={x:e.clientX,y:e.clientY}; panOrigin={x:wrap.scrollLeft,y:wrap.scrollTop}; return; }
+  if (calibrating) {
+    if (!drawing) { pts=[p]; drawing=true; }
+    else {
+      pts.push(p);
+      const pxLen = dist(pts[0], pts[1]);
+      const realVal = parseFloat(document.getElementById('scale-real').value) || 10;
+      scalePxPerUnit = pxLen / realVal;
+      document.getElementById('scale-px').value = pxLen.toFixed(1);
+      calibrating=false; drawing=false; pts=[];
+      document.getElementById('btn-calibrate').classList.remove('active');
+      setStatus('Scale set: ' + pxLen.toFixed(1) + ' px = ' + realVal + ' ' + document.getElementById('scale-unit').value);
+      redraw();
+    }
+    return;
+  }
+  if (mode === 'line') {
+    if (!drawing) { pts=[p]; drawing=true; }
+    else {
+      pts.push(p);
+      measurements.push({ type:'line', pts:[...pts], pxLen:dist(pts[0],pts[1]), color:COLORS[colorIdx%COLORS.length], label:'Line '+(measurements.length+1) });
+      colorIdx++; drawing=false; pts=[];
+      redraw(); renderList();
+    }
+  } else if (mode === 'poly') {
+    if (!drawing) { pts=[p]; drawing=true; }
+    else { pts.push(p); redraw(); }
+  }
+});
+
+cCanvas.addEventListener('dblclick', e => {
+  if (mode==='poly' && drawing && pts.length>=2) {
+    measurements.push({ type:'poly', pts:[...pts], pxLen:polyLen(pts), color:COLORS[colorIdx%COLORS.length], label:'Polyline '+(measurements.length+1) });
+    colorIdx++; drawing=false; pts=[];
+    redraw(); renderList();
+  }
+});
+
+cCanvas.addEventListener('mousemove', e => {
+  const p = getPos(e);
+  if (panMode && panStart) {
+    wrap.scrollLeft = panOrigin.x - (e.clientX - panStart.x);
+    wrap.scrollTop  = panOrigin.y - (e.clientY - panStart.y);
+  }
+  if (drawing) { previewPt=p; redraw(); }
+  drawGreenCursor(p);
+});
+
+cCanvas.addEventListener('mouseup', () => { if(panMode) panStart=null; });
+
+function redraw() {
+  mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
+  measurements.forEach(drawMeasurement);
+  if (drawing && pts.length && previewPt) {
+    mCtx.save(); mCtx.strokeStyle=GREEN; mCtx.lineWidth=1.5; mCtx.setLineDash([5,4]);
+    mCtx.beginPath(); mCtx.moveTo(pts[pts.length-1].x, pts[pts.length-1].y);
+    mCtx.lineTo(previewPt.x, previewPt.y); mCtx.stroke();
+    const allPts=[...pts,previewPt];
+    const d = mode==='line' ? dist(allPts[0],allPts[allPts.length-1]) : polyLen(allPts);
+    drawLabel(previewPt, formatDist(d), GREEN);
+    mCtx.restore();
+    pts.forEach(p => drawDot(p, GREEN));
+  }
+  if (calibrating && drawing && pts.length===1 && previewPt) {
+    mCtx.save(); mCtx.strokeStyle='#E24B4A'; mCtx.lineWidth=1.5; mCtx.setLineDash([4,3]);
+    mCtx.beginPath(); mCtx.moveTo(pts[0].x,pts[0].y); mCtx.lineTo(previewPt.x,previewPt.y); mCtx.stroke(); mCtx.restore();
+    drawDot(pts[0], '#E24B4A');
+  }
+}
+
+function drawMeasurement(m) {
+  mCtx.save(); mCtx.strokeStyle=m.color; mCtx.lineWidth=2; mCtx.setLineDash([]);
+  mCtx.beginPath(); mCtx.moveTo(m.pts[0].x, m.pts[0].y);
+  for(let i=1;i<m.pts.length;i++) mCtx.lineTo(m.pts[i].x, m.pts[i].y);
+  mCtx.stroke(); mCtx.restore();
+  m.pts.forEach(p => drawDot(p, m.color));
+  drawLabel(midPoint(m.pts), formatDist(m.pxLen), m.color);
+}
+
+function midPoint(pts) {
+  if (pts.length===2) return {x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2};
+  const half=polyLen(pts)/2; let acc=0;
+  for(let i=1;i<pts.length;i++){
+    const d=dist(pts[i-1],pts[i]);
+    if(acc+d>=half){ const t=(half-acc)/d; return {x:pts[i-1].x+t*(pts[i].x-pts[i-1].x), y:pts[i-1].y+t*(pts[i].y-pts[i-1].y)}; }
+    acc+=d;
+  }
+  return pts[Math.floor(pts.length/2)];
+}
+
+function drawDot(p, color) {
+  mCtx.save(); mCtx.fillStyle=color;
+  mCtx.beginPath(); mCtx.arc(p.x,p.y,4,0,Math.PI*2); mCtx.fill();
+  mCtx.strokeStyle='#fff'; mCtx.lineWidth=1.5;
+  mCtx.beginPath(); mCtx.arc(p.x,p.y,4,0,Math.PI*2); mCtx.stroke(); mCtx.restore();
+}
+
+function drawLabel(p, text, color) {
+  mCtx.save(); mCtx.font='bold 12px sans-serif';
+  const tw=mCtx.measureText(text).width;
+  const px=p.x-tw/2-5, py=p.y-22;
+  mCtx.fillStyle='rgba(255,255,255,0.9)';
+  mCtx.beginPath(); mCtx.roundRect(px,py,tw+10,20,4); mCtx.fill();
+  mCtx.strokeStyle=color; mCtx.lineWidth=1;
+  mCtx.beginPath(); mCtx.roundRect(px,py,tw+10,20,4); mCtx.stroke();
+  mCtx.fillStyle=color; mCtx.fillText(text,px+5,py+14); mCtx.restore();
+}
+
+function renderList() {
+  const el = document.getElementById('measurements-list');
+  if (!measurements.length) { el.innerHTML='<span style="font-size:13px;color:var(--text3)">No measurements yet.</span>'; return; }
+  el.innerHTML = measurements.map((m,i) => `
+    <div class="m-item">
+      <div class="m-dot" style="background:${m.color}"></div>
+      <span class="m-label">${m.label}</span>
+      <span class="m-val">${formatDist(m.pxLen)}</span>
+      <span class="m-px">(${m.pxLen.toFixed(1)} px)</span>
+      <span class="m-del" onclick="delM(${i})" title="Delete">&#215;</span>
+    </div>`).join('');
+}
+
+window.delM = function(i) { measurements.splice(i,1); redraw(); renderList(); };
+
+document.getElementById('scale-real').addEventListener('change', () => {
+  if (scalePxPerUnit !== null) {
+    const pxLen = parseFloat(document.getElementById('scale-px').value);
+    scalePxPerUnit = pxLen / (parseFloat(document.getElementById('scale-real').value) || 10);
+    redraw(); renderList();
+  }
+});
+document.getElementById('scale-unit').addEventListener('change', () => { redraw(); renderList(); });
+</script>
+</body>
+</html>

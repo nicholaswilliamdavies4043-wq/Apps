@@ -1,0 +1,11 @@
+{
+  "name": "machine-hours-portal",
+  "version": "1.2.0",
+  "description": "Tele-remote & RCC machine hours log, analytics, maintenance countdowns, chat and announcements — per mine site.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "optionalDependencies": { "nodemailer": "^6.9.14" },
+  "license": "UNLICENSED",
+  "private": true
+}

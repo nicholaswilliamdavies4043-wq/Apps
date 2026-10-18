@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f6fb3"/><stop offset=".55" stop-color="#8fbfe6"/><stop offset="1" stop-color="#dbe9f4"/>
+    </linearGradient>
+    <linearGradient id="rock" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3a3f45"/><stop offset=".6" stop-color="#5a6068"/><stop offset="1" stop-color="#7c838b"/>
+    </linearGradient>
+    <linearGradient id="rock2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6d747c"/><stop offset="1" stop-color="#9aa1a8"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b9bec3"/><stop offset=".4" stop-color="#d9dde0"/><stop offset="1" stop-color="#eef0f1"/>
+    </linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="18"/></filter>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .18 0"/></filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+  <g fill="#fff" opacity=".85" filter="url(#blur)">
+    <ellipse cx="1150" cy="300" rx="360" ry="70"/><ellipse cx="1500" cy="250" rx="300" ry="60"/>
+    <ellipse cx="850" cy="360" rx="260" ry="50"/><ellipse cx="1700" cy="380" rx="260" ry="55"/>
+    <ellipse cx="1300" cy="410" rx="420" ry="55"/>
+  </g>
+  <!-- distant tree line -->
+  <path d="M700 560 q20-30 40 0 q15-40 35 0 q25-35 45 0 q20-45 40 0 q18-30 40 0 q22-38 44 0 q15-28 36 0 q24-40 46 0 q20-32 42 0 q18-36 40 0 q22-30 44 0 q20-42 42 0 q16-30 38 0 q22-36 44 0 q18-30 40 0 q20-44 42 0 q20-30 40 0 q24-38 46 0 q18-32 40 0 q20-36 42 0 q20-30 40 0 q22-40 44 0 q18-30 40 0 L1920 560 L1920 620 L700 620 Z" fill="#2f5230"/>
+  <!-- far right cliffs -->
+  <path d="M1080 600 L1180 540 L1330 560 L1450 520 L1600 545 L1760 510 L1920 530 L1920 700 L1080 700 Z" fill="url(#rock2)"/>
+  <path d="M1080 640 L1920 610 L1920 660 L1080 680 Z" fill="#8a9098" opacity=".7"/>
+  <!-- main left rock wall with benches -->
+  <path d="M0 80 L180 60 L330 120 L470 160 L600 240 L760 330 L900 430 L1040 560 L1120 640 L1120 760 L0 800 Z" fill="url(#rock)"/>
+  <g fill="none" stroke="#2a2e33" stroke-width="3" opacity=".55">
+    <path d="M0 260 L200 240 L380 280 L560 360 L720 440 L880 520 L1010 600"/>
+    <path d="M0 420 L220 410 L420 450 L620 520 L800 580 L960 640"/>
+    <path d="M0 560 L260 560 L520 600 L760 650 L1000 700"/>
+  </g>
+  <g stroke="#23272b" stroke-width="2" opacity=".35">
+    <path d="M120 100 L100 250 M260 90 L240 245 M400 150 L370 300 M520 210 L500 360 M660 280 L640 440 M800 360 L780 520 M150 270 L140 410 M330 290 L310 440 M540 380 L520 520 M740 470 L720 590"/>
+  </g>
+  <!-- trees on top of wall -->
+  <g fill="#27472a">
+    <path d="M120 70 l14-50 14 50z"/><path d="M160 66 l12-40 12 40z"/><path d="M300 110 l14-46 14 46z"/><path d="M350 125 l12-40 12 40z"/>
+    <path d="M430 150 l14-44 14 44z"/><path d="M470 162 l12-38 12 38z"/><path d="M540 196 l14-40 14 40z"/><path d="M620 245 l12-36 12 36z"/>
+  </g>
+  <!-- ground -->
+  <path d="M0 740 Q600 690 1100 700 T1920 690 L1920 1080 L0 1080 Z" fill="url(#ground)"/>
+  <path d="M1050 1080 Q1350 860 1920 760 L1920 820 Q1450 900 1250 1080 Z" fill="#c9cdd1"/>
+  <g fill="#e6e8ea"><ellipse cx="420" cy="760" rx="260" ry="30"/><ellipse cx="760" cy="740" rx="160" ry="22"/></g>
+  <rect width="1920" height="1080" filter="url(#grain)"/>
+</svg>
