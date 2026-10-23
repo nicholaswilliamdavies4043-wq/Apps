@@ -31,6 +31,7 @@ const APP_URL = process.env.APP_URL || ('http://localhost:' + PORT);
 const OWNERS = Array.from(new Set(Core.DEFAULT_OWNERS.concat((process.env.SUPERUSER_EMAILS || '').split(','))
   .map((e) => e.trim().toLowerCase()).filter(Boolean)));
 const STORAGE = (process.env.STORAGE || 'file').toLowerCase();
+if (!['file', 'sharepoint', 'postgres'].includes(STORAGE)) throw new Error('STORAGE must be file, sharepoint, or postgres');
 
 fs.mkdirSync(path.join(DATA_DIR, 'backups'), { recursive: true });
 
@@ -46,10 +47,14 @@ catch (e) {
   db = Core.emptyDB();
 }
 let saveTimer = null, rev = 0;
+let pgStore = null;
 function save() {
   rev++;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(writeLocal, 300);
+  saveTimer = setTimeout(() => {
+    try { writeLocal(); } catch (e) { console.error('Local cache write failed:', e.message); }
+  }, 300);
+  if (pgStore) pgStore.schedule(db);
   if (sp) sp.schedule(db);
 }
 function writeLocal() {
@@ -71,6 +76,7 @@ const { SharePointStore } = require('./storage/sharepoint.js');
 const STORAGE_FILE = path.join(DATA_DIR, 'storage.json'); // written by Superuser → Data source
 /** SharePoint settings: .env wins; otherwise what a superuser saved in the app */
 function storageConfig() {
+  if (STORAGE === 'postgres') return null;
   if (STORAGE === 'sharepoint') {
     return { source: 'env', siteUrl: process.env.SP_SITE_URL, siteId: process.env.SP_SITE_ID, tenantId: process.env.SP_TENANT_ID, clientId: process.env.SP_CLIENT_ID,
       clientSecret: process.env.SP_CLIENT_SECRET, prefix: process.env.SP_LIST_PREFIX != null ? process.env.SP_LIST_PREFIX : 'MHP_', createLists: process.env.SP_CREATE_LISTS === 'true' };
@@ -274,7 +280,7 @@ function signedIn(req, s, name, email, isSuper) {
 
 async function api(req, res, url) {
   const p = url.pathname.replace(/^\/api/, '') || '/';
-  if (p === '/health') return send(res, 200, { ok: true, mode: 'server', version: Core.VERSION, storage: sp ? 'sharepoint' : 'file' });
+  if (p === '/health') return send(res, 200, { ok: true, mode: 'server', version: Core.VERSION, storage: pgStore ? 'postgres' : (sp ? 'sharepoint' : 'file'), databaseConnected: pgStore ? pgStore.status.connected : undefined });
   if (p === '/network') {
     const ips = [];
     for (const list of Object.values(os.networkInterfaces())) for (const a of list || []) if (a.family === 'IPv4' && !a.internal) ips.push(a.address);
@@ -548,12 +554,27 @@ setInterval(async () => {
   catch (e) { if (sp) sp.fail(e); }
 }, PULL_MIN * 60000);
 
-function flushAndExit() { clearTimeout(saveTimer); try { writeLocal(); } catch (e) { /* ignore */ } process.exit(0); }
+async function flushAndExit() {
+  clearTimeout(saveTimer);
+  try { writeLocal(); } catch (e) { console.error('Final local cache write failed:', e.message); }
+  try { if (pgStore) { await pgStore.flush(db); await pgStore.close(); } } catch (e) { console.error('Final PostgreSQL save failed:', e.message); }
+  try { if (sp) await sp.flush(db); } catch (e) { console.error('Final SharePoint save failed:', e.message); }
+  process.exit(0);
+}
 process.on('SIGINT', flushAndExit);
 process.on('SIGTERM', flushAndExit);
 
 /* ------------------------------------------------------------ start */
 (async () => {
+  if (STORAGE === 'postgres') {
+    if (!process.env.DATABASE_URL) throw new Error('STORAGE=postgres requires the DATABASE_URL environment variable');
+    const { PostgresStore } = require('./storage/postgres.js');
+    pgStore = new PostgresStore({ connectionString: process.env.DATABASE_URL });
+    const persisted = await pgStore.start(db);
+    if (persisted) db = Core.migrate(persisted);
+    writeLocal();
+    console.log('  ✓ PostgreSQL connected — ' + (persisted ? 'loaded persistent data' : 'initialized from the local data file'));
+  }
   const resetArg = process.argv.find((a) => a.startsWith('--reset-password='));
   if (resetArg) {
     const email = normEmail(resetArg.split('=')[1]);
@@ -578,7 +599,7 @@ process.on('SIGTERM', flushAndExit);
     console.log('\n  Machine Hours Portal v' + Core.VERSION);
     console.log('  → ' + (TLS ? 'https' : 'http') + '://localhost:' + PORT);
     for (const list of Object.values(os.networkInterfaces())) for (const a of list || []) if (a.family === 'IPv4' && !a.internal) console.log('    phones/tablets on the same network: ' + (TLS ? 'https' : 'http') + '://' + a.address + ':' + PORT);
-    console.log('  Storage: ' + (sp ? 'SharePoint (local cache ' + DB_FILE + ')' : DB_FILE));
+    console.log('  Storage: ' + (pgStore ? 'PostgreSQL (local cache ' + DB_FILE + ')' : (sp ? 'SharePoint (local cache ' + DB_FILE + ')' : DB_FILE)));
     console.log('  Email:   ' + (mailer ? 'SMTP ' + process.env.SMTP_HOST : 'not configured — messages are written to data/outbox.log'));
     console.log('  Superusers (owners): ' + OWNERS.join(', '));
     for (const [email, code] of codes) console.log('\n  ► First-time superuser setup for ' + email + '\n    Sign in with that email and enter this one-time code:  ' + code + '\n    (also saved in data/superuser-setup-codes.txt, valid 7 days)');
