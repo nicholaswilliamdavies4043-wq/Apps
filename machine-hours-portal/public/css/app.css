@@ -261,6 +261,8 @@ textarea.inp { resize: vertical; min-height: 80px; }
 input[type=color].inp { padding: 4px; height: 42px; }
 input[type=checkbox] { accent-color: var(--sv-gold); width: 16px; height: 16px; }
 .check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13.5px; }
+.signin .check.remember { flex-wrap: wrap; margin: 2px 0 4px; }
+.signin .check.remember .hint { font-size: 12px; }
 .hint { font-size: 12px; color: var(--muted); }
 .kbd { font-family: ui-monospace, Consolas, monospace; font-size: 11px; padding: 1px 6px; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px; color: #dfe5ea; }
 

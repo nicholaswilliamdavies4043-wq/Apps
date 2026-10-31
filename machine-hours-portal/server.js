@@ -244,9 +244,14 @@ function readBody(req) {
     req.on('error', reject);
   });
 }
+// "Remember me": 30 days from sign-in; otherwise 12 hours (one shift). Sessions are saved with the data,
+// so with PostgreSQL they survive restarts and Render's free-tier sleep.
+const REMEMBER_MS = 30 * Core.DAY, SHORT_MS = 12 * 3600000;
+const sessionEnds = (s) => s.expiresAt || ((s.createdAt || 0) + REMEMBER_MS); // sessions from before this change: 30 days
 function sessionOf(token) {
   const s = token && db.sessions[token];
   if (!s) return null;
+  if (Date.now() > sessionEnds(s)) { delete db.sessions[token]; save(); return null; }
   const u = db.users.find((x) => x.id === s.userId);
   if (!u || u.disabled) { delete db.sessions[token]; return null; }
   s.lastSeen = Date.now();
@@ -256,9 +261,9 @@ function sessionOf(token) {
   if (isSuperEmail(u.email) && !s.super) { delete db.sessions[token]; save(); return null; }
   return { token, userId: s.userId, user: u, isSuper: !!s.super && isSuperEmail(u.email) };
 }
-function newSession(userId, isSuper) {
-  const t = crypto.randomBytes(24).toString('hex');
-  db.sessions[t] = { userId, super: !!isSuper, createdAt: Date.now(), lastSeen: Date.now() };
+function newSession(userId, isSuper, remember) {
+  const t = crypto.randomBytes(24).toString('hex'), now = Date.now();
+  db.sessions[t] = { userId, super: !!isSuper, createdAt: now, lastSeen: now, remember: !!remember, expiresAt: now + (remember ? REMEMBER_MS : SHORT_MS) };
   return t;
 }
 const httpErr = (s, m, extra) => Object.assign(new Core.HttpError(s, m), { extra });
@@ -271,17 +276,18 @@ function run(req, s, p, body) {
   if (out.emails.length) sendEmails(out.emails);
   return out;
 }
-function signedIn(req, s, name, email, isSuper) {
+function signedIn(req, s, name, email, isSuper, remember) {
   const out = run({ method: 'POST' }, null, '/auth/signin', { name, email });
-  const token = newSession(out.data.id, isSuper);
+  const token = newSession(out.data.id, isSuper, remember);
   out.data.isSuper = !!isSuper;
   save();
-  return { user: out.data, token };
+  return { user: out.data, token, expiresAt: db.sessions[token].expiresAt };
 }
 
 async function api(req, res, url) {
   const p = url.pathname.replace(/^\/api/, '') || '/';
-  if (p === '/health') return send(res, 200, { ok: true, mode: 'server', version: Core.VERSION, storage: pgStore ? 'postgres' : (sp ? 'sharepoint' : 'file'), databaseConnected: pgStore ? pgStore.status.connected : undefined });
+  if (p === '/health') return send(res, 200, { ok: true, mode: 'server', version: Core.VERSION, storage: pgStore ? 'postgres' : (sp ? 'sharepoint' : 'file'), databaseConnected: pgStore ? pgStore.status.connected : undefined,
+    keepAlive: keepAlive.url ? { everyMinutes: keepAlive.minutes, lastPing: keepAlive.last ? new Date(keepAlive.last).toISOString() : null, ok: keepAlive.lastError ? false : keepAlive.lastOk ? true : null } : false });
   if (p === '/network') {
     const ips = [];
     for (const list of Object.values(os.networkInterfaces())) for (const a of list || []) if (a.family === 'IPv4' && !a.internal) ips.push(a.address);
@@ -313,7 +319,7 @@ async function api(req, res, url) {
   }
   if (p === '/auth/signin' && req.method === 'POST') {
     const email = normEmail(body.email), name = String(body.name || '').trim();
-    if (!isSuperEmail(email)) return send(res, 200, signedIn(req, s, name, email, false));
+    if (!isSuperEmail(email)) return send(res, 200, signedIn(req, s, name, email, false, body.remember === true));
     // superuser email → password (or first-time setup code) required
     const u = db.users.find((x) => x.email === email);
     if (u && u.disabled) throw httpErr(403, 'This account has been disabled');
@@ -327,7 +333,7 @@ async function api(req, res, url) {
       throw httpErr(401, 'Incorrect password', { needPassword: true });
     }
     Sec.succeeded(email);
-    return send(res, 200, signedIn(req, s, name || (u && u.name) || email, email, true));
+    return send(res, 200, signedIn(req, s, name || (u && u.name) || email, email, true, body.remember === true));
   }
   if (p === '/auth/setup' && req.method === 'POST') {
     const email = normEmail(body.email), name = String(body.name || '').trim();
@@ -340,7 +346,7 @@ async function api(req, res, url) {
     db.security.creds[email] = Sec.hashPassword(body.password);
     delete db.security.codes[email];
     Sec.succeeded(email);
-    const r = signedIn(req, s, name || email, email, true);
+    const r = signedIn(req, s, name || email, email, true, body.remember === true);
     Core.audit(db, db.users.find((x) => x.email === email), 'Superuser password set', null, email); save();
     return send(res, 200, r);
   }
@@ -549,13 +555,34 @@ function tick() {
     const roll = Core.rollBuckets(db, Date.now());
     if (roll.dirty) { save(); broadcast(roll.events); }
     if (out.emails.length) sendEmails(out.emails);
-    const cutoff = Date.now() - 90 * Core.DAY; // expire sessions idle > 90 days
-    for (const [t, x] of Object.entries(db.sessions)) if ((x.lastSeen || x.createdAt) < cutoff) { delete db.sessions[t]; save(); }
+    for (const [t, x] of Object.entries(db.sessions)) if (Date.now() > sessionEnds(x)) { delete db.sessions[t]; save(); } // expired sessions
     dailyBackup();
   } catch (e) { console.error('Scheduler error', e); }
 }
 setInterval(tick, 60 * 1000);
 setTimeout(tick, 2000);
+
+/*
+ * Keep-alive: Render's free web services sleep after 15 minutes without incoming traffic. The server calls its own
+ * public address every KEEP_ALIVE_MINUTES (default 10) so it stays awake. On by default on Render (RENDER_EXTERNAL_URL
+ * is set there automatically) or when KEEP_ALIVE_URL is set; KEEP_ALIVE=off turns it off.
+ */
+const KEEP_ALIVE_URL = (process.env.KEEP_ALIVE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
+const KEEP_ALIVE_MIN = Math.max(1, Number(process.env.KEEP_ALIVE_MINUTES) || 10);
+const keepAlive = { url: KEEP_ALIVE_URL && String(process.env.KEEP_ALIVE || '').toLowerCase() !== 'off' ? KEEP_ALIVE_URL + '/api/health?keepalive=1' : null, minutes: KEEP_ALIVE_MIN, last: null, lastOk: null, lastError: null };
+if (keepAlive.url) {
+  const ping = async () => {
+    keepAlive.last = Date.now();
+    try {
+      const r = await fetch(keepAlive.url, { headers: { 'User-Agent': 'mhp-keepalive' }, signal: AbortSignal.timeout(20000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      keepAlive.lastOk = Date.now(); keepAlive.lastError = null;
+    } catch (e) { keepAlive.lastError = e.message; console.error('[keep-alive] ping failed:', e.message); }
+  };
+  setInterval(ping, KEEP_ALIVE_MIN * 60 * 1000).unref();
+  setTimeout(ping, 30 * 1000).unref();
+  console.log('  ✓ Keep-alive: pinging ' + KEEP_ALIVE_URL + ' every ' + KEEP_ALIVE_MIN + ' min');
+}
 
 const PULL_MIN = Number(process.env.SP_PULL_MINUTES) || 5;
 setInterval(async () => {
