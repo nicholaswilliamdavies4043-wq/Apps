@@ -79,11 +79,19 @@
 
   /* ---------------------------------------------------------- schema */
   const MACHINE_STATUS = ['Operating', 'Standby', 'Down', 'In maintenance'];
+  const MACHINE_TYPES = ['Loader', 'Truck', 'Drill', 'Other'];
+  // Machines saved before types existed are loaders (the portal was built for loaders).
+  const isLoader = (m) => !!m && (!m.type || m.type === 'Loader');
+  /** Bucket count → truck equivalent, e.g. { trucks: 2.33, full: 2, rest: 1 } (null without a ratio). */
+  function truckEq(buckets, perTruck) {
+    if (!isNum(buckets) || !isNum(perTruck) || perTruck <= 0) return null;
+    return { trucks: r2(buckets / perTruck), full: Math.floor(buckets / perTruck + 1e-9), rest: r2(buckets - Math.floor(buckets / perTruck + 1e-9) * perTruck) };
+  }
   const SCHEMA = {
-    machines: { name: 'str!', model: 'str', active: 'bool', openingTR: 'num', openingRCC: 'num', status: 'str', notes: 'text' },
+    machines: { name: 'str!', model: 'str', type: 'str', bucketsPerTruck: 'num', active: 'bool', openingTR: 'num', openingRCC: 'num', status: 'str', notes: 'text' },
     operators: { name: 'str!' },
     telehuts: { name: 'str!' },
-    entries: { date: 'date!', shift: 'str!', machineId: 'str!', telehut: 'str', operator: 'str', trEnd: 'num!', rccEnd: 'num!', remarks: 'text' },
+    entries: { date: 'date!', shift: 'str!', machineId: 'str!', telehut: 'str', operator: 'str', trEnd: 'num!', rccEnd: 'num!', buckets: 'num', remarks: 'text' },
     maintenance: {
       machineId: 'str!', title: 'str!', category: 'str', dueAt: 'num', basis: 'str', dueReading: 'num',
       intervalDays: 'num', intervalHours: 'num', leadDays: 'num', leadHours: 'num', notes: 'text', assignee: 'str'
@@ -128,6 +136,17 @@
       out[k] = v;
     }
     return out;
+  }
+
+  /** Extra checks for the bucket / machine-type fields (after clean()). */
+  function checkFields(col, v) {
+    if (col === 'machines') {
+      if (v.type != null && !MACHINE_TYPES.includes(v.type)) throw err(400, 'Machine type must be one of: ' + MACHINE_TYPES.join(', '));
+      if (v.bucketsPerTruck != null && !(v.bucketsPerTruck > 0 && v.bucketsPerTruck <= 100)) throw err(400, 'Buckets per truck must be between 0 and 100');
+    }
+    if (col === 'entries' && v.buckets != null && !(Number.isInteger(v.buckets) && v.buckets >= 0 && v.buckets <= 10000))
+      throw err(400, 'Buckets must be a whole number from 0 to 10000');
+    return v;
   }
 
   function normUrl(u) {
@@ -180,6 +199,10 @@
       }
       r.valid = r.issues.length === 0;
       r.total = r.valid ? r2(r.trHrs + r.rccHrs) : null;
+      // Manual = what is left of the shift after tele-remote and RCC time.
+      r.manualHrs = r.valid ? r2(Math.max(0, shiftHours - r.total)) : null;
+      const te = truckEq(e.buckets, m && m.bucketsPerTruck);
+      r.trucks = te ? te.trucks : null;
       if (r.valid && r.total > shiftHours) r.warnings.push('More than ' + shiftHours + ' h in one shift');
       const key = e.machineId + '|' + e.date + '|' + e.shift;
       if (seen[key]) r.warnings.push('Duplicate machine/shift');
@@ -224,6 +247,8 @@
     const sum = (arr, k) => r2(arr.reduce((a, r) => a + (r[k] || 0), 0));
     const k = { tr: sum(valid, 'trHrs'), rcc: sum(valid, 'rccHrs') };
     k.total = r2(k.tr + k.rcc);
+    k.manual = sum(valid, 'manualHrs');
+    k.buckets = sum(rows, 'buckets');
     k.share = k.total ? k.tr / k.total : null;
     k.check = rows.filter((r) => r.needsCheck).length;
     k.errors = rows.filter((r) => !r.valid).length;
@@ -236,8 +261,9 @@
       const all = rows.filter((r) => r.machineId === m.id);
       const last = all[all.length - 1];
       const tr = sum(mr, 'trHrs'), rcc = sum(mr, 'rccHrs');
+      const buckets = sum(all, 'buckets'), te = truckEq(buckets, m.bucketsPerTruck);
       return {
-        machine: m, tr, rcc, total: r2(tr + rcc), shifts: mr.length,
+        machine: m, tr, rcc, total: r2(tr + rcc), shifts: mr.length, manual: sum(mr, 'manualHrs'), buckets, trucks: te ? te.trucks : null,
         latestTR: met[m.id] && met[m.id].tr, latestRCC: met[m.id] && met[m.id].rcc,
         lastOperator: last ? last.operator : (met[m.id] && met[m.id].lastOperator)
       };
@@ -373,7 +399,7 @@
     const days = 40;
     const startDate = addDays(localDate(now), -days + 1);
     const mk = (name, model, active, tr, rcc, status) => {
-      const m = { id: uid('m_'), siteId, name, model, active, openingTR: tr, openingRCC: rcc, status, notes: null, createdAt: t0 };
+      const m = { id: uid('m_'), siteId, name, model, type: 'Loader', bucketsPerTruck: 4, bucketCount: 0, active, openingTR: tr, openingRCC: rcc, status, notes: null, createdAt: t0 };
       db.machines.push(m); return m;
     };
     const L6 = mk('Loader 6', 'LH517i', true, 4520.0, 1180.0, 'Operating');
@@ -401,7 +427,7 @@
           mt.tr = r2(mt.tr + tr); mt.rcc = r2(mt.rcc + rcc);
           db.entries.push({
             id: uid('e_'), siteId, date, shift, machineId: m.id, telehut: i === 1 ? 'Telehut 2' : 'Telehut 1',
-            operator: ops[(k++ + d) % ops.length], trEnd: mt.tr, rccEnd: mt.rcc, remarks,
+            operator: ops[(k++ + d) % ops.length], trEnd: mt.tr, rccEnd: mt.rcc, buckets: Math.round(tr * 4), remarks,
             createdBy: userId, createdAt: t0 + k
           });
         });
@@ -590,13 +616,19 @@
         // devices that were offline send their own id, so replaying a queued change twice is harmless
         const cid = clientId(body.id);
         if (cid) { const ex = db[col].find((x) => x.id === cid); if (ex) return ok(ex); }
-        const v = clean(SCHEMA[col], body);
+        const v = checkFields(col, clean(SCHEMA[col], body));
         const item = Object.assign({ id: cid || uid(col.slice(0, 2) + '_'), siteId: s.id }, v, { createdBy: user.id, createdAt: now });
         if (isNum(body.clientAt) && body.clientAt < now && now - body.clientAt < 30 * DAY) item.loggedOfflineAt = body.clientAt;
         if (col === 'machines') { if (item.active == null) item.active = true; if (!item.status) item.status = 'Operating'; }
         if (col === 'entries') {
-          if (!db.machines.find((m) => m.id === item.machineId && m.siteId === s.id)) throw err(400, 'Unknown machine');
+          const mach = db.machines.find((m) => m.id === item.machineId && m.siteId === s.id);
+          if (!mach) throw err(400, 'Unknown machine');
           item.createdByName = user.name;
+          // buckets taken from the live counter come off it (anything counted since stays on)
+          if (body.takeBuckets === true && isNum(item.buckets) && item.buckets > 0 && isNum(mach.bucketCount)) {
+            mach.bucketCount = Math.max(0, mach.bucketCount - item.buckets); mach.bucketCountAt = now; mach.bucketCountBy = user.name;
+            out.events.push({ type: 'change', siteId: s.id, col: 'machines', action: 'upsert', item: mach });
+          }
         }
         if (col === 'messages' || col === 'announcements') { item.userId = user.id; item.userName = user.name; }
         if (col === 'announcements' && !item.priority) item.priority = 'info';
@@ -676,8 +708,24 @@
         return ok({ item, log });
       }
 
+      // live bucket counter on a loader: { delta: ±n } or { set: n }; opId makes a replayed offline click harmless
+      if (col === 'machines' && seg[2] === 'buckets' && seg.length === 3 && method === 'POST') {
+        if (!isLoader(item)) throw err(400, 'Bucket counting is only for loaders');
+        const opId = typeof body.opId === 'string' && /^[a-z0-9_-]{6,40}$/i.test(body.opId) ? body.opId : null;
+        const seen = item.bucketOps || [];
+        if (opId && seen.includes(opId)) return ok(item);
+        let next;
+        if (body.set != null) { next = Number(body.set); if (!Number.isInteger(next) || next < 0 || next > 10000) throw err(400, 'Count must be a whole number from 0 to 10000'); }
+        else { const d = Number(body.delta); if (!Number.isInteger(d) || d === 0 || Math.abs(d) > 100) throw err(400, 'Invalid bucket change'); next = Math.min(10000, Math.max(0, (item.bucketCount || 0) + d)); }
+        item.bucketCount = next; item.bucketCountAt = now; item.bucketCountBy = user.name;
+        if (opId) item.bucketOps = seen.concat(opId).slice(-30);
+        mut();
+        out.events.push({ type: 'change', siteId: item.siteId, col: 'machines', action: 'upsert', item });
+        return ok(item);
+      }
+
       if (method === 'PUT' && seg.length === 2) {
-        const v = clean(SCHEMA[col], body, true);
+        const v = checkFields(col, clean(SCHEMA[col], body, true));
         Object.assign(item, v, { updatedAt: now, updatedBy: user.name });
         if (col === 'maintenance') {
           item.notified = {};
@@ -778,7 +826,7 @@
   }
 
   return {
-    VERSION, DAY, uid, r2, localDate, addDays, daysInMonth, emptyDB, migrate, MACHINE_STATUS,
+    VERSION, DAY, uid, r2, localDate, addDays, daysInMonth, emptyDB, migrate, MACHINE_STATUS, MACHINE_TYPES, isLoader, truckEq,
     DEFAULT_OWNERS, DEFAULT_SETTINGS, superEmails, isSuperEmail, audit, pub,
     computeSite, meters, analytics, maintStatus, checkMaintenance, seedDemo, handle, HttpError, normUrl
   };

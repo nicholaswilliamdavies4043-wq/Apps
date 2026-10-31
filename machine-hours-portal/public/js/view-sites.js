@@ -102,16 +102,25 @@
       body: '<div class="form-grid">' +
         '<label class="field"><span>Name *</span><input class="inp" name="name" value="' + esc(m.name || '') + '" placeholder="Loader 12"></label>' +
         '<label class="field"><span>Model</span><input class="inp" name="model" value="' + esc(m.model || '') + '" placeholder="LH517i"></label>' +
+        '<label class="field"><span>Machine type</span><select class="inp" name="type" data-mtype>' + Core.MACHINE_TYPES.map((t) => '<option ' + ((m.type || 'Loader') === t ? 'selected' : '') + '>' + t + '</option>').join('') + '</select></label>' +
+        '<label class="field" data-bpt><span>Buckets = 1 truck</span><input class="inp" type="number" step="0.5" min="0.5" name="bucketsPerTruck" value="' + (m.bucketsPerTruck != null ? m.bucketsPerTruck : '') + '" placeholder="e.g. 4"></label>' +
         '<label class="field"><span>Status</span><select class="inp" name="status">' + Core.MACHINE_STATUS.map((s) => '<option ' + ((m.status || 'Operating') === s ? 'selected' : '') + '>' + s + '</option>').join('') + '</select></label>' +
         '<label class="field"><span>In service?</span><select class="inp" name="active"><option value="true" ' + (m.active !== false ? 'selected' : '') + '>Yes — active</option><option value="false" ' + (m.active === false ? 'selected' : '') + '>No — not yet in service</option></select></label>' +
         '<label class="field"><span>Opening TR reading</span><input class="inp" type="number" step="0.1" name="openingTR" value="' + (m.openingTR != null ? m.openingTR : '') + '"></label>' +
         '<label class="field"><span>Opening RCC reading</span><input class="inp" type="number" step="0.1" name="openingRCC" value="' + (m.openingRCC != null ? m.openingRCC : '') + '"></label>' +
         '<label class="field full"><span>Notes</span><textarea class="inp" name="notes" rows="2">' + esc(m.notes || '') + '</textarea></label>' +
-        '</div><p class="hint">Opening readings are entered once per loader — they are the "Start" for its very first log row.</p>',
+        '</div><p class="hint">Opening readings are entered once per loader — they are the "Start" for its very first log row. ' +
+        'For loaders, "Buckets = 1 truck" turns the bucket count on the Fleet card into truck loads.</p>',
+      onMount: (ov) => {
+        const sync = () => { $('[data-bpt]', ov).classList.toggle('hidden', $('[data-mtype]', ov).value !== 'Loader'); };
+        $('[data-mtype]', ov).addEventListener('change', sync); sync();
+      },
       onOk: async (ov) => {
         const f = UI.formData($('.modal-b', ov));
         f.active = f.active === 'true';
         if (!f.name) throw new Error('Name is required');
+        if (f.type !== 'Loader') f.bucketsPerTruck = null;
+        if (f.bucketsPerTruck != null && !(f.bucketsPerTruck > 0)) throw new Error('Buckets per truck must be more than 0');
         if (m.id) await API.put('machines/' + m.id, f); else await API.post('sites/' + App.S.siteId + '/machines', f);
         toast(m.id ? 'Machine saved' : 'Machine added');
       }
@@ -136,8 +145,9 @@
       '<div class="stack">' +
       // machines
       '<div class="card"><div class="card-h"><h3>' + icon('fleet') + 'Machines <span class="pill">' + S.data.machines.length + '</span></h3><button class="btn sm primary" data-perm="super" data-addm>' + icon('plus') + ' Add machine</button></div>' +
-      (S.data.machines.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Machine</th><th>Model</th><th>Active?</th><th>Status</th><th class="n">Opening TR</th><th class="n">Opening RCC</th><th class="n">Latest TR</th><th class="n">Latest RCC</th><th></th></tr></thead><tbody>' +
+      (S.data.machines.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Machine</th><th>Model</th><th>Type</th><th class="n">Buckets/truck</th><th>Active?</th><th>Status</th><th class="n">Opening TR</th><th class="n">Opening RCC</th><th class="n">Latest TR</th><th class="n">Latest RCC</th><th></th></tr></thead><tbody>' +
         S.data.machines.map((m) => '<tr class="' + (m.active === false ? 'inactive' : '') + '"><td class="strong">' + esc(m.name) + '</td><td>' + esc(m.model || '–') + '</td>' +
+          '<td>' + esc(m.type || 'Loader') + '</td><td class="n">' + (Core.isLoader(m) ? (m.bucketsPerTruck != null ? (Number.isInteger(m.bucketsPerTruck) ? m.bucketsPerTruck : num1(m.bucketsPerTruck)) : '<span class="faint">not set</span>') : '–') + '</td>' +
           '<td>' + (m.active === false ? '<span class="pill">No</span>' : '<span class="pill ok">Yes</span>') + '</td><td>' + esc(m.status || '') + '</td>' +
           '<td class="n">' + (m.openingTR != null ? num1(m.openingTR) : '<span class="faint">enter when it arrives</span>') + '</td><td class="n">' + num1(m.openingRCC) + '</td>' +
           '<td class="n">' + num1(met[m.id] && met[m.id].tr) + '</td><td class="n">' + num1(met[m.id] && met[m.id].rcc) + '</td>' +
@@ -151,10 +161,10 @@
       '</div>' +
       // details
       '<div class="stack"><div class="card" data-details data-readonly="super"><div class="card-h"><h3>' + icon('site') + 'Site details</h3><span class="pill gold" data-perm-not="super">' + icon('shield') + ' Superusers only</span></div>' + siteForm(s) +
-      '<div class="form-grid mt"><label class="field"><span>Max hrs / shift</span><input class="inp" type="number" step="0.5" name="shiftHours" value="' + (s.shiftHours != null ? s.shiftHours : 12) + '"></label>' +
+      '<div class="form-grid mt"><label class="field"><span>Shift length (hrs)</span><input class="inp" type="number" step="0.5" name="shiftHours" value="' + (s.shiftHours != null ? s.shiftHours : 12) + '"></label>' +
       '<label class="field"><span>Warn days before</span><input class="inp" type="number" step="1" name="leadDays" value="' + (s.leadDays != null ? s.leadDays : 3) + '"></label>' +
       '<label class="field"><span>Warn hrs before</span><input class="inp" type="number" step="1" name="leadHours" value="' + (s.leadHours != null ? s.leadHours : 25) + '"></label></div>' +
-      '<p class="hint">Rows above the max hours per shift are flagged for a check. Maintenance turns "due soon" when within the warning window.</p>' +
+      '<p class="hint">Manual hrs = shift length − TR hrs − RCC hrs. Rows above the shift length are flagged for a check. Maintenance turns "due soon" when within the warning window.</p>' +
       '<button class="btn primary" data-perm="super" data-savesite>' + icon('check') + ' Save site details</button></div>' +
       '<div class="card" data-perm="super" style="border-color:rgba(255,100,100,.3)"><div class="card-h"><h3 style="color:#ff9a9a">' + icon('alert') + 'Danger zone</h3></div><p class="muted" style="margin-top:0">Deleting a site removes all its machines, log rows, maintenance, chat and announcements.</p><button class="btn danger" data-delsite>' + icon('trash') + ' Delete this site</button></div>' +
       '</div></div>');

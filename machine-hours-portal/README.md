@@ -127,9 +127,9 @@ The app is responsive, so it works in any phone browser.
 
 | Area | What it does |
 |---|---|
-| **Site Definition** | Mine sites, each with its own machines (opening TR/RCC readings, in service or not), operators, telehuts, shifts, max hours per shift, warning windows and cover photo |
+| **Site Definition** | Mine sites, each with its own machines (type, opening TR/RCC readings, in service or not, buckets per truck for loaders), operators, telehuts, shifts, shift length, warning windows and cover photo |
 | **Dashboard** | Month selector; KPIs; daily and per-machine charts; the machine and operator tables from the mockup; shift and telehut split; flagged rows with Fix; upcoming maintenance; pinned announcements; CSV export |
-| **Fleet Monitoring** | **Overview:** machine cards with live maintenance countdown. **Shift log:** end readings only; start fills itself in; live check. **Maintenance:** by date and/or hour meter, repeating, with history |
+| **Fleet Monitoring** | **Overview:** machine cards with live maintenance countdown, manual hours, and a **bucket counter** on loaders (− / + buttons, shown as truck loads, shared live across devices, works offline). **Shift log:** end readings only; start fills itself in; buckets come from the counter; **manual hrs = shift length − TR hrs − RCC hrs**; live check. **Maintenance:** by date and/or hour meter, repeating, with history |
 | **Chat & announcements** | `#general` plus one channel per machine, live, with @mentions and unread badges. Announcements can be info, important or critical, pinned, set to expire, and emailed |
 | **WIDGET panel** | Edge tab on the right. Global search, maintenance donut, the **Underground Plan Calculator** app, and personal link widgets |
 | **Notifications** | Bell icon and optional email: maintenance due soon or overdue, announcements, @mentions |
@@ -167,7 +167,7 @@ sharepoint/LISTS.md       column reference
 public/js/core.js         shared by server and browser: data model, permissions, calculations, API router
 public/js/view-admin.js   Superuser pages
 public/js/...             shell, views, widgets, API client
-tests/                    e2e-test.js (UI + permissions), sharepoint-test.js + mock-graph.js
+tests/                    e2e-test.js (UI + permissions), sharepoint-test.js + mock-graph.js, buckets-test.js
 ```
 
 ## Tests
@@ -184,4 +184,6 @@ PORT=3998 DATA_DIR=/tmp/mhd STORAGE=sharepoint SP_TENANT_ID=t SP_CLIENT_ID=c SP_
 DATA_DIR=/tmp/mhd node tests/e2e-test.js && ROOT=$PWD node tests/sharepoint-test.js
 # offline queue + replay, and one-click connect (see the comments at the top of each file)
 node tests/offline-test.js        node tests/connect-test.js
+# bucket counter, buckets per truck and manual hours (fresh server)
+DATA_DIR=/tmp/mhd node tests/buckets-test.js
 ```
