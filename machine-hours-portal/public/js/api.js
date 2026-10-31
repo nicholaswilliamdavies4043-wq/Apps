@@ -20,9 +20,17 @@
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
   };
 
+  // Sign-in token: "Remember me" keeps it on this device (localStorage, 30 days); otherwise only for this
+  // browser session (sessionStorage — closing the browser or app signs out).
+  const tokenStore = {
+    get() { try { return localStorage.getItem(LS_TOKEN) || sessionStorage.getItem(LS_TOKEN); } catch (e) { return null; } },
+    set(t, remember) { tokenStore.del(); try { (remember ? localStorage : sessionStorage).setItem(LS_TOKEN, t); } catch (e) { /* ignore */ } },
+    del() { try { localStorage.removeItem(LS_TOKEN); sessionStorage.removeItem(LS_TOKEN); } catch (e) { /* ignore */ } }
+  };
+
   const API = {
     mode: null,
-    token: store.get(LS_TOKEN),
+    token: tokenStore.get(),
     online: true,
     store,
 
@@ -196,16 +204,16 @@
     put: function (p, b) { return this.call('PUT', p, b || {}); },
     del: function (p) { return this.call('DELETE', p); },
 
-    async setup(name, email, code, password) {
-      const res = await this.post('auth/setup', { name, email, code, password });
-      this.token = res.token; store.set(LS_TOKEN, res.token);
+    async setup(name, email, code, password, remember) {
+      const res = await this.post('auth/setup', { name, email, code, password, remember: !!remember });
+      this.token = res.token; tokenStore.set(res.token, remember);
       this.connect();
       return res.user;
     },
-    async signIn(name, email, password) {
-      const res = await this.post('auth/signin', { name, email, password });
+    async signIn(name, email, password, remember) {
+      const res = await this.post('auth/signin', { name, email, password, remember: !!remember });
       if (this.mode === 'local') { store.set(LS_LOCALUSER, res.id); return res; }
-      this.token = res.token; store.set(LS_TOKEN, res.token);
+      this.token = res.token; tokenStore.set(res.token, remember);
       this.connect();
       return res.user;
     },
@@ -214,7 +222,7 @@
       this.signOutLocal();
     },
     signOutLocal() {
-      this.token = null; store.del(LS_TOKEN); store.del(LS_LOCALUSER);
+      this.token = null; tokenStore.del(); store.del(LS_LOCALUSER);
       // a different person may use this device next: drop the device copy (queued changes are kept)
       for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith(LS_CACHE)) store.del(k); }
       if (this.es) { this.es.close(); this.es = null; }

@@ -131,6 +131,7 @@
         '<label class="field"><span>Setup code</span><input class="inp" name="code" autocomplete="one-time-code" placeholder="XXXX-XXXX-XXXX" style="text-transform:uppercase;letter-spacing:.12em"></label>' +
         '<label class="field"><span>New password (10+ characters, letters and numbers)</span><input class="inp" name="newpw" type="password" autocomplete="new-password"></label>' +
         '<label class="field"><span>Repeat password</span><input class="inp" name="newpw2" type="password" autocomplete="new-password"></label></div>' +
+        '<label class="check remember"><input type="checkbox" name="remember" ' + (API.store.get('mhp.remember') === '0' ? '' : 'checked') + '> Remember me for 30 days <span class="hint">(untick on shared computers)</span></label>' +
         '<button class="btn primary" type="submit">' + icon('right') + ' Continue</button></form>' +
         (API.mode === 'local' ? '<div class="demo-note"><b>Demo mode:</b> the server is not running, so data is stored in this browser only and is not shared with other users. Start the server with <span class="kbd">node server.js</span> for multi-user use.</div>' : '') +
         '<div class="hint mt">Regular users sign in with name and email only. Superusers also need their password. Your name is shown on log entries and chat messages.</div>' +
@@ -152,8 +153,9 @@
         try {
           if (mode === 'setup') {
             if (f.newpw !== f.newpw2) throw new Error('The passwords do not match');
-            await API.setup(f.name.trim(), f.email.trim(), f.code.trim(), f.newpw);
-          } else await API.signIn(f.name.trim(), f.email.trim(), mode === 'password' ? f.password : undefined);
+            await API.setup(f.name.trim(), f.email.trim(), f.code.trim(), f.newpw, f.remember);
+          } else await API.signIn(f.name.trim(), f.email.trim(), mode === 'password' ? f.password : undefined, f.remember);
+          API.store.set('mhp.remember', f.remember ? '1' : '0');
           await App.start();
         } catch (er) {
           if (er.data && er.data.needSetup) { if (mode !== 'setup') { show('setup'); toast(er.message, 'warn'); return; } }

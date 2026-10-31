@@ -1,4 +1,4 @@
-# Machine Hours Portal (pilot v1.3.0)
+# Machine Hours Portal (pilot v1.3.1)
 
 Web app for logging **tele-remote (TR) and RCC hour-meter readings** each shift, with month-to-date analysis (as in the v4 mockup), maintenance countdowns, chat, announcements and personal link widgets. Everything is kept **per mine site (environment)**. Data can live in a local file or in **SharePoint Online lists**. **Superusers** control the critical settings.
 
@@ -154,6 +154,7 @@ Optional. Without it, emails are written to `data/outbox.log`. To send real emai
 - Regular users still sign in with name and email only, so run the server on the internal network. Sandvik SSO (Entra ID) is the next step; the SharePoint app registration is a good starting point for it.
 - `db.json` and the SharePoint lists contain names and email addresses. Classify them under SICS (at least i2 Restricted).
 - The server sends a strict Content-Security-Policy, escapes all user text, and allows only http(s) widget links.
+- Sign-ins last 30 days with **Remember me**, otherwise until the browser is closed (at most 12 hours). Signing out ends the session on the server. A superuser can sign a user out everywhere from **Users & roles**. Leave Remember me unticked on shared computers.
 
 ## Project layout
 
@@ -168,7 +169,7 @@ sharepoint/LISTS.md       column reference
 public/js/core.js         shared by server and browser: data model, permissions, calculations, API router
 public/js/view-admin.js   Superuser pages
 public/js/...             shell, views, widgets, API client
-tests/                    e2e-test.js (UI + permissions), sharepoint-test.js + mock-graph.js, buckets-test.js, levels-inventory-test.js, sharepoint-optional-test.js
+tests/                    e2e-test.js (UI + permissions), sharepoint-test.js + mock-graph.js, buckets-test.js, levels-inventory-test.js, sharepoint-optional-test.js, session-test.js
 ```
 
 ## Tests
@@ -191,4 +192,6 @@ DATA_DIR=/tmp/mhd node tests/buckets-test.js
 DATA_DIR=/tmp/mhd node tests/levels-inventory-test.js
 # SharePoint site without the v1.3 lists keeps working (mock + populated lists, see the file header)
 ROOT=$PWD node tests/sharepoint-optional-test.js
+# Remember me (30 days / 12 h), sessions across restarts, keep-alive (starts its own servers; optional DATABASE_URL_TEST)
+node tests/session-test.js
 ```

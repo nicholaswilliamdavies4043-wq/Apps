@@ -3,7 +3,7 @@
  * Data is NOT handled here — the app keeps its own device copy and queue (js/api.js).
  * Bump VERSION when files change so devices pick up the new version.
  */
-const VERSION = 'mhp-1.3.0-inv1';
+const VERSION = 'mhp-1.3.1-session1';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/core.js', 'js/api.js', 'js/ui.js', 'js/view-sites.js', 'js/view-dashboard.js', 'js/view-fleet.js', 'js/view-chat.js', 'js/view-inventory.js',
