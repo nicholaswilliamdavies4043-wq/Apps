@@ -214,7 +214,7 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) error
   ok(B.App.isSuper(), 'George is now a superuser');
   // settings
   await go(A, '#/admin/settings'); await sleep(500);
-  ok(A.document.querySelectorAll('.toggle-row').length === 5, 'settings page shows 5 options');
+  ok(A.document.querySelectorAll('.toggle-row').length === 6, 'settings page shows 6 options');
   await go(A, '#/admin/audit'); await sleep(500);
   ok(/Added superuser/.test(txt(A, '#main')) && /Superuser password set/.test(txt(A, '#main')), 'audit log records superuser changes');
   await go(A, '#/admin/storage'); await sleep(500);

@@ -10,7 +10,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const DAY = 86400000;
 
   /* ---------------------------------------------------------- helpers */
@@ -37,6 +37,7 @@
     return {
       version: 1, users: [], sessions: {}, sites: [], machines: [], operators: [], telehuts: [],
       entries: [], maintenance: [], maintLog: [], messages: [], announcements: [], widgets: [], notifications: [],
+      levels: [], bucketLogs: [], inventory: [], invLog: [],
       audit: [],
       // security data never leaves the server (not synced to SharePoint, not sent to browsers)
       security: { superusers: [], creds: {}, codes: {} },
@@ -59,9 +60,10 @@
     allowUserListEdit: true,      // regular users may add/remove operators & telehuts
     allowUserMaintEdit: false,    // regular users may edit/delete maintenance schedules
     allowUserMaintCreate: true,   // regular users may create maintenance schedules
-    entryEditHours: 24            // regular users may edit/delete their own shift rows for this many hours
+    entryEditHours: 24,           // regular users may edit/delete their own shift rows for this many hours
+    allowUserInventoryEdit: true  // regular users may add inventory items, receive stock and correct counts (picking is always allowed)
   };
-  const SETTING_TYPES = { allowUserSiteCreate: 'bool', allowUserListEdit: 'bool', allowUserMaintEdit: 'bool', allowUserMaintCreate: 'bool', entryEditHours: 'num' };
+  const SETTING_TYPES = { allowUserSiteCreate: 'bool', allowUserListEdit: 'bool', allowUserMaintEdit: 'bool', allowUserMaintCreate: 'bool', entryEditHours: 'num', allowUserInventoryEdit: 'bool' };
   function superEmails(db, owners) {
     const set = new Set((owners || DEFAULT_OWNERS).map((e) => e.toLowerCase()));
     ((db.security && db.security.superusers) || []).forEach((e) => set.add(String(e).toLowerCase()));
@@ -87,7 +89,29 @@
     if (!isNum(buckets) || !isNum(perTruck) || perTruck <= 0) return null;
     return { trucks: r2(buckets / perTruck), full: Math.floor(buckets / perTruck + 1e-9), rest: r2(buckets - Math.floor(buckets / perTruck + 1e-9) * perTruck) };
   }
+  /*
+   * Shift clock for bucket counting: Day 06:00–18:00 GMT, Night 18:00–06:00 GMT.
+   * A night shift belongs to the date it started on (00:30 on the 1st is the Night shift of the 31st).
+   */
+  const SHIFT_START_HOUR_GMT = 6, SHIFT_LENGTH_H = 12;
+  function shiftAt(ms) {
+    const t = new Date(ms == null ? Date.now() : ms);
+    const h = t.getUTCHours();
+    const day = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
+    let start, shift;
+    if (h >= SHIFT_START_HOUR_GMT && h < SHIFT_START_HOUR_GMT + SHIFT_LENGTH_H) { shift = 'Day'; start = day + SHIFT_START_HOUR_GMT * 3600000; }
+    else if (h >= SHIFT_START_HOUR_GMT + SHIFT_LENGTH_H) { shift = 'Night'; start = day + (SHIFT_START_HOUR_GMT + SHIFT_LENGTH_H) * 3600000; }
+    else { shift = 'Night'; start = day - DAY + (SHIFT_START_HOUR_GMT + SHIFT_LENGTH_H) * 3600000; }
+    const date = new Date(start).toISOString().slice(0, 10);
+    return { date, shift, key: date + '|' + shift, start, end: start + SHIFT_LENGTH_H * 3600000 };
+  }
+  /** The machine's live bucket count — 0 once its shift has ended. */
+  function liveBuckets(m, now) { return m && m.bucketShiftKey === shiftAt(now).key ? (m.bucketCount || 0) : 0; }
+
   const SCHEMA = {
+    levels: { name: 'str!' },
+    bucketLogs: { level: 'str', buckets: 'num', note: 'text' },
+    inventory: { name: 'str!', partNo: 'str', location: 'str', unit: 'str', minQty: 'num', notes: 'text' },
     machines: { name: 'str!', model: 'str', type: 'str', bucketsPerTruck: 'num', active: 'bool', openingTR: 'num', openingRCC: 'num', status: 'str', notes: 'text' },
     operators: { name: 'str!' },
     telehuts: { name: 'str!' },
@@ -144,8 +168,9 @@
       if (v.type != null && !MACHINE_TYPES.includes(v.type)) throw err(400, 'Machine type must be one of: ' + MACHINE_TYPES.join(', '));
       if (v.bucketsPerTruck != null && !(v.bucketsPerTruck > 0 && v.bucketsPerTruck <= 100)) throw err(400, 'Buckets per truck must be between 0 and 100');
     }
-    if (col === 'entries' && v.buckets != null && !(Number.isInteger(v.buckets) && v.buckets >= 0 && v.buckets <= 10000))
+    if ((col === 'entries' || col === 'bucketLogs') && v.buckets != null && !(Number.isInteger(v.buckets) && v.buckets >= 0 && v.buckets <= 10000))
       throw err(400, 'Buckets must be a whole number from 0 to 10000');
+    if (col === 'inventory' && v.minQty != null && !(v.minQty >= 0)) throw err(400, 'Minimum quantity cannot be negative');
     return v;
   }
 
@@ -331,6 +356,33 @@
     return { site: db.sites.find((s) => s.id === siteId), machines: f('machines'), entries: f('entries'), operators: f('operators') };
   }
 
+  /* ---------------------------------------------------------- bucket logs */
+  function newBucketLog(m, o) {
+    return {
+      id: o.id || uid('bl_'), siteId: m.siteId, machineId: m.id, level: o.level || null, buckets: o.buckets,
+      perTruck: isNum(m.bucketsPerTruck) ? m.bucketsPerTruck : null, date: o.date, shift: o.shift, shiftKey: o.date + '|' + o.shift,
+      auto: !!o.auto, createdBy: o.userId || null, createdByName: o.userName || 'System', createdAt: o.at
+    };
+  }
+  /** At the end of a shift: save any count that was not saved (to the selected level) and reset the counter. */
+  function rollBuckets(db, now) {
+    now = now || Date.now();
+    const out = { events: [], dirty: false };
+    const cur = shiftAt(now).key;
+    for (const m of db.machines) {
+      if (!m.bucketShiftKey || m.bucketShiftKey === cur) continue;
+      if ((m.bucketCount || 0) > 0) {
+        const [date, shift] = m.bucketShiftKey.split('|');
+        const log = newBucketLog(m, { level: m.bucketLevel, buckets: m.bucketCount, date, shift, auto: true, at: now });
+        db.bucketLogs.push(log);
+        out.events.push({ type: 'change', siteId: m.siteId, col: 'bucketLogs', action: 'upsert', item: log });
+      }
+      m.bucketCount = 0; m.bucketShiftKey = null; out.dirty = true;
+      out.events.push({ type: 'change', siteId: m.siteId, col: 'machines', action: 'upsert', item: m });
+    }
+    return out;
+  }
+
   /* ---------------------------------------------------------- notifications */
   function notify(db, out, siteId, userIds, n, email) {
     const site = db.sites.find((s) => s.id === siteId);
@@ -407,6 +459,7 @@
     const L9 = mk('Loader 9', 'LH517i', true, 3700.5, 950.0, 'Operating');
     const L11 = mk('Loader 11', 'LH514', true, 1900.0, 520.5, 'Down');
     void L7;
+    ['420', '445', '470', '495'].forEach((n) => db.levels.push({ id: uid('lv_'), siteId, name: n, createdAt: t0 }));
     const ops = ['Baafi', 'O.T.', 'Amakyi', 'George', 'Bonsu', 'Agyeman'];
     ops.forEach((n) => db.operators.push({ id: uid('o_'), siteId, name: n, createdAt: t0 }));
     ['Telehut 1', 'Telehut 2'].forEach((n) => db.telehuts.push({ id: uid('t_'), siteId, name: n, createdAt: t0 }));
@@ -464,6 +517,25 @@
     msg('general', 'George', 'Night shift handover done. Loader 6 running fine.', 5 * 3600000);
     msg('general', 'Bonsu', 'Telehut 2 screen 3 is flickering, raised a ticket.', 4 * 3600000);
     msg(L9.id, 'O.T.', 'Took Loader 9 to the workshop on RCC for a hose check.', 3 * 3600000);
+    // sample bucket counts per level for the last few shifts, and a small parts store
+    const lv = ['420', '445', '470'];
+    for (let d = 3; d >= 1; d--) {
+      const sh = shiftAt(now - d * 12 * 3600000);
+      [L6, L9].forEach((m, i) => lv.slice(i, i + 2).forEach((level, j) => db.bucketLogs.push(newBucketLog(m, {
+        level, buckets: 8 + ((d * 7 + i * 5 + j * 3) % 9), date: sh.date, shift: sh.shift, userId, userName: ops[(d + i + j) % ops.length], at: sh.start + (4 + j * 3) * 3600000
+      }))));
+    }
+    const inv = [['Bucket teeth (LH517)', 'BT-517-01', 'Workshop store A3', 'pcs', 24, 8], ['Hydraulic hose 3/4"', 'HH-075', 'Workshop store B1', 'm', 60, 20],
+      ['Engine oil 15W-40', 'OIL-1540', 'Lube bay', 'L', 180, 100], ['Air filter element', 'AF-2230', 'Workshop store A1', 'pcs', 3, 4],
+      ['Tyre valve kit', 'TV-KIT', 'Tyre bay', 'kits', 10, 2], ['Remote control battery', 'RC-BAT', 'Telehut 1 cabinet', 'pcs', 6, 4]];
+    inv.forEach(([name, partNo, location, unit, q, minQty]) => {
+      const it = { id: uid('iv_'), siteId, name, partNo, location, unit, minQty, quantity: q, notes: null, createdBy: userId, createdAt: t0 };
+      db.inventory.push(it);
+      db.invLog.push({ id: uid('il_'), siteId, itemId: it.id, itemName: name, location, kind: 'receive', change: q, qtyAfter: q, note: 'Opening stock', machineId: null, userId, by: 'Workshop', at: t0 });
+    });
+    const pick = (name, q, m, d) => { const it = db.inventory.find((x) => x.siteId === siteId && x.name === name); it.quantity = r2(it.quantity - q);
+      db.invLog.push({ id: uid('il_'), siteId, itemId: it.id, itemName: name, location: it.location, kind: 'pick', change: -q, qtyAfter: it.quantity, note: null, machineId: m.id, userId, by: ops[d % ops.length], at: now - d * 3600000 }); };
+    pick('Bucket teeth (LH517)', 4, L6, 30); pick('Hydraulic hose 3/4"', 6, L9, 20); pick('Engine oil 15W-40', 40, L11, 8);
     return site;
   }
 
@@ -590,7 +662,7 @@
       if (seg.length === 2 && method === 'DELETE') {
         need(false, 'delete mine sites');
         log('Deleted site', s.id, s.name + ' (' + db.entries.filter((e) => e.siteId === s.id).length + ' log rows)');
-        for (const c of ['machines', 'operators', 'telehuts', 'entries', 'maintenance', 'maintLog', 'messages', 'announcements', 'notifications'])
+        for (const c of ['machines', 'operators', 'telehuts', 'entries', 'maintenance', 'maintLog', 'messages', 'announcements', 'notifications', 'levels', 'bucketLogs', 'inventory', 'invLog'])
           db[c] = db[c].filter((x) => x.siteId !== s.id);
         db.sites = db.sites.filter((x) => x.id !== s.id); mut();
         out.events.push({ type: 'sites', action: 'delete', id: s.id });
@@ -602,6 +674,7 @@
         return ok({
           site: siteSummary(db, s), machines: f('machines'), operators: f('operators'), telehuts: f('telehuts'), entries: f('entries'),
           maintenance: f('maintenance'), maintLog: f('maintLog'), announcements: f('announcements'), messages: f('messages').slice(-1000),
+          levels: f('levels'), bucketLogs: f('bucketLogs'), inventory: f('inventory'), invLog: f('invLog').slice(-3000),
           members: (s.members || []).map((id) => db.users.find((u) => u.id === id)).filter(Boolean).map(pub)
         });
       }
@@ -609,8 +682,10 @@
       const col = seg[2];
       if (SCHEMA[col] && seg.length === 3 && method === 'POST') {
         if (col === 'machines') need(false, 'add machines');
-        if (col === 'operators' || col === 'telehuts') need(S.allowUserListEdit, 'change the ' + col + ' list');
+        if (col === 'operators' || col === 'telehuts' || col === 'levels') need(S.allowUserListEdit, 'change the ' + col + ' list');
         if (col === 'maintenance') need(S.allowUserMaintCreate, 'schedule maintenance');
+        if (col === 'inventory') need(S.allowUserInventoryEdit !== false, 'add inventory items');
+        if (col === 'bucketLogs') throw err(400, 'Bucket counts are saved with the Save button on the loader card');
         if (col === 'announcements' && (body.priority === 'critical' || body.pinned)) need(false, 'post critical or pinned announcements');
         join(s);
         // devices that were offline send their own id, so replaying a queued change twice is harmless
@@ -640,8 +715,21 @@
           item.status = 'open'; item.startAt = now; item.notified = {};
           item.startReading = item.basis !== 'none' && met ? met[item.basis] : null;
         }
-        if ((col === 'operators' || col === 'telehuts') && db[col].some((x) => x.siteId === s.id && x.name.toLowerCase() === item.name.toLowerCase()))
+        if ((col === 'operators' || col === 'telehuts' || col === 'levels') && db[col].some((x) => x.siteId === s.id && x.name.toLowerCase() === item.name.toLowerCase()))
           throw err(409, item.name + ' already exists');
+        if (col === 'inventory') {
+          const loc = (item.location || '').toLowerCase();
+          if (db.inventory.some((x) => x.siteId === s.id && x.name.toLowerCase() === item.name.toLowerCase() && (x.location || '').toLowerCase() === loc))
+            throw err(409, item.name + (item.location ? ' at ' + item.location : '') + ' already exists — use Receive to add stock');
+          const q = body.quantity == null || body.quantity === '' ? 0 : Number(body.quantity);
+          if (!(q >= 0) || q > 1e7) throw err(400, 'Quantity must be 0 or more');
+          item.quantity = q;
+          if (q > 0) {
+            const lg = { id: uid('il_'), siteId: s.id, itemId: item.id, itemName: item.name, location: item.location || null, kind: 'receive', change: q, qtyAfter: q, note: 'Opening stock', machineId: null, userId: user.id, by: user.name, at: now };
+            db.invLog.push(lg);
+            out.events.push({ type: 'change', siteId: s.id, col: 'invLog', action: 'upsert', item: lg });
+          }
+        }
         db[col].push(item); mut();
         if (col === 'machines') log('Added machine', s.id, item.name + ' (opening TR ' + item.openingTR + ', RCC ' + item.openingRCC + ')');
         if (col === 'announcements' && item.priority === 'critical') log('Posted critical announcement', s.id, item.title);
@@ -676,8 +764,9 @@
           const keys = Object.keys(body);
           need(!del && keys.length > 0 && keys.every((k) => k === 'status'), del ? 'delete machines' : 'change machine details');
         }
-        if (col === 'operators' || col === 'telehuts') need(S.allowUserListEdit, 'change the ' + col + ' list');
-        if (col === 'entries') need(own && recent, (del ? 'delete' : 'edit') + ' this row (you can change your own rows for ' + S.entryEditHours + ' h)');
+        if (col === 'operators' || col === 'telehuts' || col === 'levels') need(S.allowUserListEdit, 'change the ' + col + ' list');
+        if (col === 'entries' || col === 'bucketLogs') need(own && recent, (del ? 'delete' : 'edit') + ' this row (you can change your own rows for ' + S.entryEditHours + ' h)');
+        if (col === 'inventory') need(!del && S.allowUserInventoryEdit !== false, del ? 'delete inventory items' : 'edit inventory items');
         if (col === 'maintenance') need(S.allowUserMaintEdit, (del ? 'delete' : 'edit') + ' maintenance schedules');
         if (col === 'announcements') {
           need(own, (del ? 'delete' : 'edit') + " other people's announcements");
@@ -709,11 +798,40 @@
       }
 
       // live bucket counter on a loader: { delta: ±n } or { set: n }; opId makes a replayed offline click harmless
-      if (col === 'machines' && seg[2] === 'buckets' && seg.length === 3 && method === 'POST') {
+      if (col === 'machines' && seg[2] === 'buckets' && method === 'POST' && (seg.length === 3 || (seg.length === 4 && seg[3] === 'save'))) {
         if (!isLoader(item)) throw err(400, 'Bucket counting is only for loaders');
+        const roll = rollBuckets(db, now); // a finished shift's count is saved and cleared first
+        if (roll.dirty) { mut(); out.events.push(...roll.events); }
+        const cur = shiftAt(now);
+        const levelOk = (name) => db.levels.some((l) => l.siteId === item.siteId && l.name === name);
+        if (seg[3] === 'save') {
+          // save the counted buckets for a mine level, then start again from 0
+          const lid = clientId(body.id);
+          if (lid) { const ex = db.bucketLogs.find((x) => x.id === lid); if (ex) return ok({ machine: item, log: ex }); }
+          const level = body.level != null ? String(body.level) : item.bucketLevel;
+          if (!level) throw err(400, 'Choose the mine level first');
+          if (!levelOk(level)) throw err(400, 'Unknown level: ' + level);
+          const n = liveBuckets(item, now);
+          if (!n) throw err(400, 'Nothing to save — the count is 0');
+          const log = newBucketLog(item, { id: lid, level, buckets: n, date: cur.date, shift: cur.shift, userId: user.id, userName: user.name, at: now });
+          db.bucketLogs.push(log);
+          item.bucketCount = 0; item.bucketLevel = level; item.bucketShiftKey = cur.key; item.bucketCountAt = now; item.bucketCountBy = user.name;
+          mut();
+          out.events.push({ type: 'change', siteId: item.siteId, col: 'bucketLogs', action: 'upsert', item: log });
+          out.events.push({ type: 'change', siteId: item.siteId, col: 'machines', action: 'upsert', item });
+          return ok({ machine: item, log });
+        }
+        if ('level' in body && body.delta == null && body.set == null) {
+          const level = body.level ? String(body.level) : null;
+          if (level && !levelOk(level)) throw err(400, 'Unknown level: ' + level);
+          item.bucketLevel = level; mut();
+          out.events.push({ type: 'change', siteId: item.siteId, col: 'machines', action: 'upsert', item });
+          return ok(item);
+        }
         const opId = typeof body.opId === 'string' && /^[a-z0-9_-]{6,40}$/i.test(body.opId) ? body.opId : null;
         const seen = item.bucketOps || [];
         if (opId && seen.includes(opId)) return ok(item);
+        if (item.bucketShiftKey !== cur.key) { item.bucketCount = 0; item.bucketShiftKey = cur.key; }
         let next;
         if (body.set != null) { next = Number(body.set); if (!Number.isInteger(next) || next < 0 || next > 10000) throw err(400, 'Count must be a whole number from 0 to 10000'); }
         else { const d = Number(body.delta); if (!Number.isInteger(d) || d === 0 || Math.abs(d) > 100) throw err(400, 'Invalid bucket change'); next = Math.min(10000, Math.max(0, (item.bucketCount || 0) + d)); }
@@ -722,6 +840,34 @@
         mut();
         out.events.push({ type: 'change', siteId: item.siteId, col: 'machines', action: 'upsert', item });
         return ok(item);
+      }
+
+      // inventory stock: pick (take out), receive (put in), count (set the counted quantity)
+      if (col === 'inventory' && seg[2] === 'move' && seg.length === 3 && method === 'POST') {
+        const lid = clientId(body.id);
+        if (lid) { const ex = db.invLog.find((x) => x.id === lid); if (ex) return ok({ item, log: ex }); }
+        const kind = String(body.kind || '');
+        if (!['pick', 'receive', 'count'].includes(kind)) throw err(400, 'Unknown stock change');
+        if (kind !== 'pick') need(S.allowUserInventoryEdit !== false, kind === 'receive' ? 'receive stock' : 'correct stock counts');
+        const q = Number(body.qty);
+        if (!isFinite(q) || q < 0 || q > 1e7 || (kind !== 'count' && q === 0)) throw err(400, 'Enter a quantity' + (kind === 'count' ? ' of 0 or more' : ' above 0'));
+        const before = item.quantity || 0;
+        let change;
+        if (kind === 'pick') {
+          if (q > before + 1e-9) throw err(409, 'Only ' + r2(before) + (item.unit ? ' ' + item.unit : '') + ' of ' + item.name + ' left' + (item.location ? ' at ' + item.location : ''));
+          change = -q;
+        } else if (kind === 'receive') change = q;
+        else change = q - before;
+        const machineId = body.machineId && db.machines.some((m) => m.id === body.machineId && m.siteId === item.siteId) ? body.machineId : null;
+        item.quantity = r2(before + change); item.updatedAt = now; item.updatedBy = user.name;
+        const lg = { id: lid || uid('il_'), siteId: item.siteId, itemId: item.id, itemName: item.name, location: item.location || null, kind, change: r2(change), qtyAfter: item.quantity,
+          note: body.note ? String(body.note).trim().slice(0, 500) || null : null, machineId, userId: user.id, by: user.name, at: now };
+        if (isNum(body.clientAt) && body.clientAt < now && now - body.clientAt < 30 * DAY) lg.loggedOfflineAt = body.clientAt;
+        db.invLog.push(lg); mut();
+        if (kind === 'count') log('Corrected stock count', item.siteId, item.name + ': ' + r2(before) + ' → ' + item.quantity);
+        out.events.push({ type: 'change', siteId: item.siteId, col: 'inventory', action: 'upsert', item });
+        out.events.push({ type: 'change', siteId: item.siteId, col: 'invLog', action: 'upsert', item: lg });
+        return ok({ item, log: lg });
       }
 
       if (method === 'PUT' && seg.length === 2) {
@@ -742,12 +888,12 @@
         return ok(item);
       }
       if (method === 'DELETE' && seg.length === 2) {
-        const label = { machines: 'machine', entries: 'shift row', maintenance: 'maintenance schedule', messages: 'chat message', announcements: 'announcement', operators: 'operator', telehuts: 'telehut' }[col];
-        if (['machines', 'maintenance'].includes(col) || (col === 'entries' && !own) || (col === 'messages' && !own) || (col === 'announcements' && !own))
+        const label = { inventory: 'inventory item', bucketLogs: 'bucket count', levels: 'level', machines: 'machine', entries: 'shift row', maintenance: 'maintenance schedule', messages: 'chat message', announcements: 'announcement', operators: 'operator', telehuts: 'telehut' }[col];
+        if (['machines', 'maintenance', 'inventory'].includes(col) || ((col === 'entries' || col === 'bucketLogs') && !own) || (col === 'messages' && !own) || (col === 'announcements' && !own))
           log('Deleted ' + label, item.siteId, item.name || item.title || (item.date ? item.date + ' ' + item.shift : '') || (item.text || '').slice(0, 80));
         db[col] = db[col].filter((x) => x.id !== item.id);
         if (col === 'machines') {
-          for (const c of ['entries', 'maintenance', 'maintLog']) db[c] = db[c].filter((x) => x.machineId !== item.id);
+          for (const c of ['entries', 'maintenance', 'maintLog', 'bucketLogs']) db[c] = db[c].filter((x) => x.machineId !== item.id);
           out.events.push({ type: 'reload', siteId: item.siteId });
         }
         mut();
@@ -826,7 +972,7 @@
   }
 
   return {
-    VERSION, DAY, uid, r2, localDate, addDays, daysInMonth, emptyDB, migrate, MACHINE_STATUS, MACHINE_TYPES, isLoader, truckEq,
+    VERSION, DAY, uid, r2, localDate, addDays, daysInMonth, emptyDB, migrate, MACHINE_STATUS, MACHINE_TYPES, isLoader, truckEq, shiftAt, liveBuckets, rollBuckets,
     DEFAULT_OWNERS, DEFAULT_SETTINGS, superEmails, isSuperEmail, audit, pub,
     computeSite, meters, analytics, maintStatus, checkMaintenance, seedDemo, handle, HttpError, normUrl
   };

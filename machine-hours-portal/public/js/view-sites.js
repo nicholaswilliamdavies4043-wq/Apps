@@ -129,7 +129,7 @@
 
   function listChips(col, label, placeholder) {
     const items = App.S.data[col];
-    return '<div class="card"><div class="card-h"><h3>' + icon(col === 'operators' ? 'users' : 'cpu') + label + ' <span class="pill">' + items.length + '</span></h3></div>' +
+    return '<div class="card"><div class="card-h"><h3>' + icon(col === 'operators' ? 'users' : col === 'levels' ? 'site' : 'cpu') + label + ' <span class="pill">' + items.length + '</span></h3></div>' +
       '<div class="chips">' + (items.length ? items.map((o) => '<span class="chip">' + esc(o.name) + '<button data-perm="listEdit" data-delchip="' + col + '" data-id="' + o.id + '" aria-label="Remove">' + icon('x') + '</button></span>').join('') : '<span class="muted">None yet</span>') + '</div>' +
       '<form class="row mt" data-perm="listEdit" data-addchip="' + col + '"><input class="inp" name="name" placeholder="' + placeholder + '" style="flex:1;min-width:140px"><button class="btn">' + icon('plus') + ' Add</button></form></div>';
   }
@@ -154,6 +154,7 @@
           '<td class="acts" data-perm="super"><button class="btn icon sm ghost" data-editm="' + m.id + '" title="Edit">' + icon('pencil') + '</button><button class="btn icon sm ghost" data-delm="' + m.id + '" title="Delete">' + icon('trash') + '</button></td></tr>').join('') +
         '</tbody></table></div>' : '<div class="empty">' + icon('fleet') + '<div>No machines yet. Add your loaders with their opening hour-meter readings.</div></div>') + '</div>' +
       '<div class="grid g-2">' + listChips('operators', 'Operators', 'Operator name') + listChips('telehuts', 'Telehuts', 'e.g. Telehut 3') + '</div>' +
+      listChips('levels', 'Mine levels (for bucket counts)', 'e.g. 420') +
       // shifts
       '<div class="card"><div class="card-h"><h3>' + icon('clock') + 'Shifts</h3><span class="hint">Order matters: it decides which reading comes first on the same day.</span></div>' +
       '<div class="chips" data-shifts>' + shifts.map((x, i) => '<span class="chip"><span class="ord">' + (i + 1) + '.</span> ' + esc(x) + (shifts.length > 1 ? '<button data-perm="super" data-delshift="' + i + '">' + icon('x') + '</button>' : '') + '</span>').join('') + '</div>' +
