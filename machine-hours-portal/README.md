@@ -1,4 +1,4 @@
-# Machine Hours Portal (pilot v1.2.0)
+# Machine Hours Portal (pilot v1.3.0)
 
 Web app for logging **tele-remote (TR) and RCC hour-meter readings** each shift, with month-to-date analysis (as in the v4 mockup), maintenance countdowns, chat, announcements and personal link widgets. Everything is kept **per mine site (environment)**. Data can live in a local file or in **SharePoint Online lists**. **Superusers** control the critical settings.
 
@@ -65,7 +65,7 @@ The server checks every rule on every request, so hidden buttons are not the onl
 
 ## SharePoint
 
-With `STORAGE=sharepoint` the portal stores its data in 12 SharePoint lists on one site, through Microsoft Graph (app-only). The lists are Sites, Machines, Operators, Telehuts, ShiftEntries, Maintenance, MaintenanceLog, Announcements, ChatMessages, Users, Widgets and AuditLog, each with the prefix `MHP_`. Cover photos go to the site's document library under `MachineHoursPortal/covers/`. Every column is described in [`sharepoint/LISTS.md`](sharepoint/LISTS.md).
+With `STORAGE=sharepoint` the portal stores its data in 16 SharePoint lists on one site, through Microsoft Graph (app-only). The lists are Sites, Machines, Operators, Telehuts, ShiftEntries, Maintenance, MaintenanceLog, Announcements, ChatMessages, Users, Widgets, AuditLog, MineLevels, BucketCounts, Inventory and InventoryMovements, each with the prefix `MHP_`. The last four arrived in v1.3. A site that doesn't have them yet keeps working, and their records stay on the server until the lists exist. Create them with **Check lists** when the app has "Manage" on the site, or by running `sharepoint/create-lists.ps1` again. Cover photos go to the site's document library under `MachineHoursPortal/covers/`. Every column is described in [`sharepoint/LISTS.md`](sharepoint/LISTS.md).
 
 **How it behaves**
 
@@ -129,7 +129,8 @@ The app is responsive, so it works in any phone browser.
 |---|---|
 | **Site Definition** | Mine sites, each with its own machines (type, opening TR/RCC readings, in service or not, buckets per truck for loaders), operators, telehuts, shifts, shift length, warning windows and cover photo |
 | **Dashboard** | Month selector; KPIs; daily and per-machine charts; the machine and operator tables from the mockup; shift and telehut split; flagged rows with Fix; upcoming maintenance; pinned announcements; CSV export |
-| **Fleet Monitoring** | **Overview:** machine cards with live maintenance countdown, manual hours, and a **bucket counter** on loaders (− / + buttons, shown as truck loads, shared live across devices, works offline). **Shift log:** end readings only; start fills itself in; buckets come from the counter; **manual hrs = shift length − TR hrs − RCC hrs**; live check. **Maintenance:** by date and/or hour meter, repeating, with history |
+| **Fleet Monitoring** | **Overview:** machine cards with live maintenance countdown, manual hours, and a **bucket counter** on loaders: pick the **mine level**, count with − / +, **Save** (shown as truck loads, shared live across devices, works offline). Counters start again at every shift change (Day 06:00–18:00, Night 18:00–06:00 GMT); an unsaved count is saved automatically to its level. **Buckets:** saved counts per level, shift and loader with totals and CSV. **Shift log:** end readings only; start fills itself in; buckets are prefilled from the counts saved that shift; **manual hrs = shift length − TR hrs − RCC hrs**; live check. **Maintenance:** by date and/or hour meter, repeating, with history |
+| **Inventory** | Items with part no., store location, quantity, unit and minimum. **Pick** (anyone; optional machine and note), **Receive**, **Stock count**; picks can never take more than is in stock. Low-stock highlight and nav badge, search by item or location, per-item history, **Movements** log and CSV |
 | **Chat & announcements** | `#general` plus one channel per machine, live, with @mentions and unread badges. Announcements can be info, important or critical, pinned, set to expire, and emailed |
 | **WIDGET panel** | Edge tab on the right. Global search, maintenance donut, the **Underground Plan Calculator** app, and personal link widgets |
 | **Notifications** | Bell icon and optional email: maintenance due soon or overdue, announcements, @mentions |
@@ -167,7 +168,7 @@ sharepoint/LISTS.md       column reference
 public/js/core.js         shared by server and browser: data model, permissions, calculations, API router
 public/js/view-admin.js   Superuser pages
 public/js/...             shell, views, widgets, API client
-tests/                    e2e-test.js (UI + permissions), sharepoint-test.js + mock-graph.js, buckets-test.js
+tests/                    e2e-test.js (UI + permissions), sharepoint-test.js + mock-graph.js, buckets-test.js, levels-inventory-test.js, sharepoint-optional-test.js
 ```
 
 ## Tests
@@ -186,4 +187,8 @@ DATA_DIR=/tmp/mhd node tests/e2e-test.js && ROOT=$PWD node tests/sharepoint-test
 node tests/offline-test.js        node tests/connect-test.js
 # bucket counter, buckets per truck and manual hours (fresh server)
 DATA_DIR=/tmp/mhd node tests/buckets-test.js
+# mine levels, saved bucket counts per shift, inventory (fresh server)
+DATA_DIR=/tmp/mhd node tests/levels-inventory-test.js
+# SharePoint site without the v1.3 lists keeps working (mock + populated lists, see the file header)
+ROOT=$PWD node tests/sharepoint-optional-test.js
 ```

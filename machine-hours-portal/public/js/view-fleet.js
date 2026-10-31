@@ -34,23 +34,45 @@
 
   const nOrDec = (x) => (Number.isInteger(x) ? String(x) : num1(x));
 
-  /** Live bucket counter shown on a loader's card. */
+  const shiftLabel = (sh) => sh.shift + ' ' + (sh.shift === 'Day' ? '06–18' : '18–06') + ' GMT';
+  const trucksOf = (n, per) => { const te = Core.truckEq(n, per); return te ? te.trucks : null; };
+  /** { level: { buckets, trucks } } for a list of bucket logs */
+  function byLevel(logs) {
+    const o = {};
+    logs.forEach((l) => { const k = l.level || 'No level'; const x = o[k] || (o[k] = { buckets: 0, trucks: 0, hasTrucks: false, n: 0 });
+      x.buckets += l.buckets || 0; x.n++; const t = trucksOf(l.buckets, l.perTruck); if (t != null) { x.trucks += t; x.hasTrucks = true; } });
+    return o;
+  }
+
+  /** Live bucket counter on a loader's card: pick the level, count, Save. Starts again at every shift change. */
   function bucketBox(m) {
-    const n = m.bucketCount || 0;
+    const S = App.S, sh = Core.shiftAt(Date.now());
+    const n = Core.liveBuckets(m);
+    const levels = (S.data.levels || []).map((l) => l.name);
+    const level = levels.includes(m.bucketLevel) ? m.bucketLevel : '';
     const tt = truckText(n, m.bucketsPerTruck);
+    const saved = byLevel((S.data.bucketLogs || []).filter((l) => l.machineId === m.id && l.shiftKey === sh.key));
+    const savedTxt = Object.keys(saved).sort().map((k) => '<span class="pill">' + esc(k) + ' · <b>' + saved[k].buckets + '</b>' + (saved[k].hasTrucks ? ' (' + num1(saved[k].trucks) + ' trucks)' : '') + '</span>').join(' ');
     return '<div class="bucket" data-bk="' + m.id + '">' +
-      '<div class="bk-h"><span class="bk-l">' + icon('fleet') + 'Bucket count</span>' +
-      (n ? '<button class="btn sm ghost" data-breset="' + m.id + '" title="Set the counter back to 0">Reset</button>' : '') + '</div>' +
+      '<div class="bk-h"><span class="bk-l">' + icon('fleet') + 'Bucket count</span><span class="hint" data-bkshift>' + esc(shiftLabel(sh)) + '</span></div>' +
+      (levels.length
+        ? '<label class="bk-level"><span>Level</span><select class="inp" data-blevel="' + m.id + '"><option value="">— select level —</option>' +
+          levels.map((l) => '<option ' + (l === level ? 'selected' : '') + '>' + esc(l) + '</option>').join('') + '</select></label>'
+        : '<div class="hint">No mine levels yet — <a href="#/sites/setup">add levels in Site setup</a>.</div>') +
       '<div class="bk-row"><button class="btn bk-btn" data-bdec="' + m.id + '" aria-label="Remove one bucket" ' + (n ? '' : 'disabled') + '>−</button>' +
       '<div class="bk-v"><b data-bkn>' + n + '</b><span data-bkt>' + (!m.bucketsPerTruck ? 'Set buckets per truck in Site setup' : n ? '= ' + esc(tt) : 'Tap + for each bucket') + '</span></div>' +
       '<button class="btn bk-btn primary" data-binc="' + m.id + '" aria-label="Add one bucket">+</button></div>' +
-      (m.bucketsPerTruck ? '<div class="hint">' + nOrDec(m.bucketsPerTruck) + ' buckets = 1 truck' + (n && m.bucketCountBy ? ' · last count by ' + esc(m.bucketCountBy) : '') + '</div>' : '') +
+      '<div class="bk-actions"><button class="btn primary" data-bsave="' + m.id + '" ' + (n && level ? '' : 'disabled') + '>' + icon('check') + ' <span data-bsavetxt>' + saveText(n, level) + '</span></button>' +
+      (n ? '<button class="btn ghost" data-breset="' + m.id + '" title="Set the counter back to 0 without saving">Reset</button>' : '') + '</div>' +
+      '<div class="bk-saved"><span class="hint">Saved this shift:</span> ' + (savedTxt || '<span class="hint">nothing yet</span>') + '</div>' +
+      (m.bucketsPerTruck ? '<div class="hint">' + nOrDec(m.bucketsPerTruck) + ' buckets = 1 truck · an unsaved count is saved automatically when the shift ends</div>' : '') +
       '</div>';
   }
+  function saveText(n, level) { return !level ? 'Select a level to save' : n ? 'Save ' + n + ' to level ' + esc(level) : 'Save to level ' + esc(level); }
 
   function head(sub) {
     return '<div class="view-head"><div><h2>Fleet Monitoring</h2><div class="sub">' + esc(App.site.name) + ' · live machine status, hour meters and maintenance countdowns</div></div>' +
-      '<div class="head-actions"><div class="subtabs">' + [['overview', 'Overview'], ['log', 'Shift log'], ['maintenance', 'Maintenance']].map(([k, l]) =>
+      '<div class="head-actions"><div class="subtabs">' + [['overview', 'Overview'], ['log', 'Shift log'], ['buckets', 'Buckets'], ['maintenance', 'Maintenance']].map(([k, l]) =>
         '<button data-sub="' + k + '" class="' + (sub === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div></div>';
   }
 
@@ -102,6 +124,14 @@
         : '<div class="card mt"><div class="empty">' + icon('fleet') + '<div>No machines at this site yet.</div><a class="btn primary mt" href="#/sites/setup">' + icon('plus') + ' Add machines</a></div></div>'));
 
     wrap.addEventListener('change', async (e) => {
+      const lv = e.target.closest('[data-blevel]');
+      if (lv) {
+        const box = lv.closest('[data-bk]'), n = Number($('[data-bkn]', box).textContent);
+        $('[data-bsave]', box).disabled = !(n && lv.value); $('[data-bsavetxt]', box).innerHTML = saveText(n, lv.value);
+        lv.blur();
+        try { await API.post('machines/' + lv.dataset.blevel + '/buckets', { level: lv.value || null }); } catch (er) { toast(er.message, 'err'); }
+        return;
+      }
       const s = e.target.closest('[data-status]'); if (!s) return;
       try { await API.put('machines/' + s.dataset.status, { status: s.value }); toast(App.machineName(s.dataset.status) + ' → ' + s.value); }
       catch (er) { toast(er.message, 'err'); }
@@ -118,13 +148,27 @@
         $('[data-bkn]', box).textContent = next;
         if (m.bucketsPerTruck) $('[data-bkt]', box).textContent = next ? '= ' + truckText(next, m.bucketsPerTruck) : 'Tap + for each bucket';
         $('[data-bdec]', box).disabled = !next;
+        const lv = ($('[data-blevel]', box) || {}).value || '';
+        $('[data-bsave]', box).disabled = !(next && lv); $('[data-bsavetxt]', box).innerHTML = saveText(next, lv);
         try { await API.post('machines/' + bid + '/buckets', { delta, opId: Core.uid('bk_') }); }
         catch (er) { toast(er.message, 'err'); }
         return;
       }
+      if (b.dataset.bsave) {
+        const m = S.data.machines.find((x) => x.id === b.dataset.bsave); if (!m) return;
+        const box = b.closest('[data-bk]'), level = $('[data-blevel]', box).value, n = Number($('[data-bkn]', box).textContent);
+        if (!level) return toast('Select the level first', 'err');
+        b.disabled = true;
+        try {
+          await API.post('machines/' + m.id + '/buckets/save', { id: Core.uid('bl_'), level });
+          const t = trucksOf(n, m.bucketsPerTruck);
+          toast(m.name + ': saved ' + n + ' buckets' + (t != null ? ' (' + num1(t) + ' trucks)' : '') + ' to level ' + level);
+        } catch (er) { b.disabled = false; toast(er.message, 'err'); }
+        return;
+      }
       if (b.dataset.breset) {
         const m = S.data.machines.find((x) => x.id === b.dataset.breset);
-        if (!m || !(await confirmBox('Set the bucket count for ' + m.name + ' back to 0? (' + (m.bucketCount || 0) + ' buckets counted)', { okText: 'Reset' }))) return;
+        if (!m || !(await confirmBox('Set the bucket count for ' + m.name + ' back to 0 without saving? (' + Core.liveBuckets(m) + ' buckets counted)', { okText: 'Reset', danger: true }))) return;
         try { await API.post('machines/' + m.id + '/buckets', { set: 0, opId: Core.uid('bk_') }); toast(m.name + ': bucket count reset'); }
         catch (er) { toast(er.message, 'err'); }
         return;
@@ -180,7 +224,7 @@
     const form = $('form', root);
     const pv = $('[data-preview]', root);
     const mOf = (id) => S.data.machines.find((m) => m.id === id);
-    // Buckets: loaders only; a new row starts from the machine's live counter.
+    // Buckets: loaders only; a new row starts from the counts saved on the loader's card for that date and shift.
     let fromCounter = false;
     function syncBuckets() {
       const m = mOf(form.elements.machineId.value);
@@ -189,12 +233,13 @@
       const inp = form.elements.buckets, src = $('[data-bsrc]', form);
       if (!loader) { inp.value = ''; fromCounter = false; src.textContent = ''; return; }
       if (!entry && m && (fromCounter || inp.value === '')) {
-        const n = m.bucketCount || 0;
+        const d = form.elements.date.value, sh = form.elements.shift.value;
+        const n = (S.data.bucketLogs || []).filter((l) => l.machineId === m.id && l.date === d && l.shift === sh).reduce((a, l) => a + (l.buckets || 0), 0);
         inp.value = n ? n : ''; fromCounter = n > 0;
-        src.textContent = n ? '(counter)' : '';
+        src.textContent = n ? '(saved)' : '';
       }
     }
-    form.elements.machineId.addEventListener('change', syncBuckets);
+    ['machineId', 'date', 'shift'].forEach((k) => form.elements[k].addEventListener('change', syncBuckets));
     form.elements.buckets.addEventListener('input', () => { fromCounter = false; $('[data-bsrc]', form).textContent = ''; });
     syncBuckets();
 
@@ -232,8 +277,6 @@
       if (f.buckets != null && !(Number.isInteger(f.buckets) && f.buckets >= 0)) return toast('Buckets must be a whole number', 'err');
       const m = mOf(f.machineId);
       if (m && !Core.isLoader(m)) f.buckets = null;
-      // buckets logged for a loader come off its live counter (new rows only)
-      if (!entry && m && Core.isLoader(m) && f.buckets > 0 && (m.bucketCount || 0) > 0) f.takeBuckets = true;
       if (r && !r.valid && !(await confirmBox('This row fails the check (' + r.issues.join(', ') + ') and will be left out of totals. Save anyway?', { okText: 'Save anyway' }))) return;
       try {
         if (entry) await API.put('entries/' + entry.id, f);
@@ -332,6 +375,59 @@
     });
     // live refresh of the table only (keeps the entry form as typed)
     Views.fleet._logUpdate = () => { shown = drawTable(); };
+  }
+
+  /* =================================================== bucket counts per level */
+  const bkFilter = { from: null, to: null, shift: '', level: '', machine: '' };
+  function renderBuckets(wrap) {
+    const S = App.S, today = Core.shiftAt(Date.now()).date;
+    bkFilter.from = bkFilter.from || Core.addDays(today, -6); bkFilter.to = bkFilter.to || today;
+    const levels = (S.data.levels || []).map((l) => l.name);
+    const loaders = S.data.machines.filter((m) => Core.isLoader(m));
+    wrap.insertAdjacentHTML('beforeend',
+      '<div class="card"><div class="card-h"><h3>' + icon('fleet') + 'Bucket counts per level</h3><div class="row"><button class="btn sm" data-csv>' + icon('download') + ' CSV</button></div></div>' +
+      '<div class="filters" style="margin-bottom:12px">' +
+      '<label class="field"><span>From</span><input class="inp" type="date" data-k="from" value="' + bkFilter.from + '"></label>' +
+      '<label class="field"><span>To</span><input class="inp" type="date" data-k="to" value="' + bkFilter.to + '"></label>' +
+      '<label class="field"><span>Shift</span><select class="inp" data-k="shift">' + opts(['Day', 'Night'], bkFilter.shift, 'All') + '</select></label>' +
+      '<label class="field"><span>Level</span><select class="inp" data-k="level">' + opts(levels, bkFilter.level, 'All') + '</select></label>' +
+      '<label class="field"><span>Loader</span><select class="inp" data-k="machine">' + opts(loaders.map((m) => [m.id, m.name]), bkFilter.machine, 'All') + '</select></label></div>' +
+      '<div data-bksum></div><div data-bktable></div>' +
+      '<p class="hint" style="margin-bottom:0">Shifts: Day 06:00–18:00 GMT, Night 18:00–06:00 GMT (a night shift belongs to the date it started). Counts not saved by the end of a shift are saved automatically and marked “auto”.</p></div>');
+    let shown = [];
+    const draw = () => {
+      shown = (S.data.bucketLogs || []).filter((l) => l.date >= bkFilter.from && l.date <= bkFilter.to && (!bkFilter.shift || l.shift === bkFilter.shift) &&
+        (!bkFilter.level || l.level === bkFilter.level) && (!bkFilter.machine || l.machineId === bkFilter.machine))
+        .sort((a, b) => b.createdAt - a.createdAt);
+      const lv = byLevel(shown);
+      const total = shown.reduce((a, l) => a + (l.buckets || 0), 0), totalT = shown.reduce((a, l) => a + (trucksOf(l.buckets, l.perTruck) || 0), 0);
+      $('[data-bksum]', wrap).innerHTML = '<div class="grid g-kpi" style="margin-bottom:14px">' +
+        '<div class="card kpi" style="--c:var(--sv-gold)"><div class="l">All levels</div><div class="v">' + total + '</div><div class="s">buckets · ≈ ' + num1(totalT) + ' trucks</div></div>' +
+        Object.keys(lv).sort().map((k) => '<div class="card kpi"><div class="l">Level ' + esc(k) + '</div><div class="v">' + lv[k].buckets + '</div><div class="s">buckets' + (lv[k].hasTrucks ? ' · ≈ ' + num1(lv[k].trucks) + ' trucks' : '') + ' · ' + lv[k].n + ' saves</div></div>').join('') + '</div>';
+      $('[data-bktable]', wrap).innerHTML = !shown.length ? '<div class="empty">' + icon('fleet') + '<div>No bucket counts saved for this selection.</div></div>' :
+        '<div class="hint" style="margin-bottom:6px">' + shown.length + ' saved counts</div><div class="tbl-wrap" style="max-height:60vh"><table class="tbl"><thead><tr><th>Date</th><th>Shift</th><th>Loader</th><th>Level</th><th class="n">Buckets</th><th class="n">Trucks</th><th>Saved by</th><th>Saved at</th><th></th></tr></thead><tbody>' +
+        shown.map((l) => { const t = trucksOf(l.buckets, l.perTruck);
+          return '<tr><td>' + dShort(l.date) + '</td><td>' + esc(l.shift) + '</td><td>' + esc(App.machineName(l.machineId)) + '</td><td class="strong">' + esc(l.level || 'No level') + '</td>' +
+            '<td class="n strong">' + l.buckets + '</td><td class="n">' + (t != null ? num1(t) : '–') + '</td><td>' + esc(l.createdByName || '') + (l.auto ? ' <span class="pill">auto</span>' : '') + '</td>' +
+            '<td class="muted">' + esc(dt(l.createdAt)) + '</td><td class="acts">' + (App.canEditEntry(l) ? '<button class="btn icon sm ghost" data-delbl="' + l.id + '" title="Delete">' + icon('trash') + '</button>' : '') + '</td></tr>'; }).join('') +
+        '</tbody></table></div>';
+    };
+    draw();
+    wrap.addEventListener('change', (e) => { const k = e.target.dataset.k; if (!k) return; bkFilter[k] = e.target.value || (k === 'from' || k === 'to' ? bkFilter[k] : ''); draw(); });
+    wrap.addEventListener('click', async (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.delbl) {
+        const l = S.data.bucketLogs.find((x) => x.id === b.dataset.delbl);
+        if (l && await confirmBox('Delete ' + l.buckets + ' buckets for level ' + (l.level || '–') + ' (' + App.machineName(l.machineId) + ', ' + l.shift + ' ' + dShort(l.date) + ')?', { danger: true, okText: 'Delete' })) {
+          try { await API.del('bucketLogs/' + l.id); toast('Deleted'); } catch (er) { toast(er.message, 'err'); }
+        }
+      }
+      if ('csv' in b.dataset) {
+        const rows = [['Date', 'Shift', 'Loader', 'Level', 'Buckets', 'Buckets per truck', 'Trucks', 'Saved by', 'Saved at (UTC)', 'Auto-saved']];
+        shown.forEach((l) => rows.push([l.date, l.shift, App.machineName(l.machineId), l.level, l.buckets, l.perTruck, trucksOf(l.buckets, l.perTruck), l.createdByName, new Date(l.createdAt).toISOString(), l.auto ? 'yes' : '']));
+        UI.downloadCSV('bucket-counts_' + App.site.name.replace(/[^\w-]+/g, '_') + '_' + bkFilter.from + '_' + bkFilter.to + '.csv', rows);
+      }
+    });
   }
 
   /* =================================================== maintenance */
@@ -470,16 +566,21 @@
   let curSub = 'overview';
   Views.fleet = {
     render(wrap, r) {
-      curSub = ['overview', 'log', 'maintenance'].includes(r.sub) ? r.sub : 'overview';
+      curSub = ['overview', 'log', 'buckets', 'maintenance'].includes(r.sub) ? r.sub : 'overview';
+      clearInterval(Views.fleet._shiftTimer);
+      // redraw when a shift ends so the counters start again at 0
+      let key = Core.shiftAt(Date.now()).key;
+      Views.fleet._shiftTimer = setInterval(() => { const k = Core.shiftAt(Date.now()).key; if (k !== key) { key = k; App.refresh({ force: true }); } }, 20000);
       Views.fleet._logUpdate = null;
       wrap.innerHTML = head(curSub);
       $$('.subtabs [data-sub]', wrap).forEach((b) => b.addEventListener('click', () => App.go('fleet', b.dataset.sub)));
       if (curSub === 'overview') renderOverview(wrap);
       else if (curSub === 'log') renderLog(wrap);
+      else if (curSub === 'buckets') renderBuckets(wrap);
       else renderMaint(wrap);
     },
     update(ev) {
-      if (ev && ev.col === 'messages') return true;
+      if (ev && ['messages', 'inventory', 'invLog'].includes(ev.col)) return true;
       if (curSub === 'log' && Views.fleet._logUpdate && ev && ['entries', 'machines'].includes(ev.col)) { Views.fleet._logUpdate(); return true; }
       return false;
     },

@@ -151,14 +151,14 @@ class SharePointStore {
           displayName: name, description: 'Machine Hours Portal — ' + l.desc,
           columns: allColumns(l).map(([n, t, , o]) => columnDef(n, t, o && o.indexed)), list: { template: 'genericList' }
         });
-        report.push({ list: name, action: 'created', columns: allColumns(l).length });
+        report.push({ list: name, action: 'created', columns: allColumns(l).length, optional: !!l.optional });
       } else if (list) {
         const cols = await this.pages('/sites/' + sid + '/lists/' + list.id + '/columns?$select=name&$top=999');
         const have = new Set(cols.map((c) => c.name));
         const missing = allColumns(l).filter(([n]) => !have.has(n));
         if (missing.length && create) for (const [n, t, , o] of missing) await this.g('POST', '/sites/' + sid + '/lists/' + list.id + '/columns', columnDef(n, t, o && o.indexed));
-        report.push({ list: name, action: missing.length ? (create ? 'added ' + missing.length + ' columns' : 'MISSING columns: ' + missing.map((m) => m[0]).join(', ')) : 'ok' });
-      } else report.push({ list: name, action: 'MISSING' });
+        report.push({ list: name, action: missing.length ? (create ? 'added ' + missing.length + ' columns' : 'MISSING columns: ' + missing.map((m) => m[0]).join(', ')) : 'ok', optional: !!l.optional });
+      } else report.push({ list: name, action: 'MISSING', optional: !!l.optional });
       if (list) this.state.lists[l.key] = list.id;
     }
     this.saveState();
@@ -296,6 +296,7 @@ class SharePointStore {
     const data = {};
     for (const l of LISTS) {
       const lid = this.state.lists[l.key];
+      if (!lid && l.optional) { data[l.key] = null; continue; } // not created yet: these records stay on the server
       if (!lid) throw new Error('SharePoint list ' + listName(this.o.prefix, l) + ' is missing. Run: node scripts/sharepoint-setup.js --create');
       data[l.key] = await this.pages('/sites/' + sid + '/lists/' + lid + '/items?$expand=fields&$top=999');
     }
@@ -304,8 +305,9 @@ class SharePointStore {
   /** Replace the synced collections in db with what is in SharePoint. Returns true if anything changed. */
   async apply(db, data) {
     const map = {}, snap = {}, next = {};
-    const prefixes = { sites: 's_', machines: 'm_', operators: 'o_', telehuts: 't_', entries: 'e_', maintenance: 'mt_', maintLog: 'ml_', announcements: 'a_', messages: 'c_', users: 'u_', widgets: 'w_', audit: 'au_' };
+    const prefixes = { sites: 's_', machines: 'm_', operators: 'o_', telehuts: 't_', entries: 'e_', maintenance: 'mt_', maintLog: 'ml_', announcements: 'a_', messages: 'c_', users: 'u_', widgets: 'w_', audit: 'au_', levels: 'lv_', bucketLogs: 'bl_', inventory: 'iv_', invLog: 'il_' };
     for (const l of LISTS) {
+      if (data[l.key] == null) { map[l.key] = this.state.map[l.key] || {}; snap[l.key] = this.state.snap[l.key] || {}; next[l.key] = db[l.key] || []; continue; }
       map[l.key] = {}; snap[l.key] = {}; next[l.key] = [];
       for (const it of data[l.key]) {
         const f = it.fields || {};
@@ -348,11 +350,13 @@ class SharePointStore {
   async start(db) {
     await this.resolveSite();
     const report = await this.ensureLists(!!this.o.createLists);
-    const missing = report.filter((r) => /MISSING/.test(r.action));
+    const missing = report.filter((r) => /MISSING/.test(r.action) && !r.optional);
+    const later = report.filter((r) => /MISSING/.test(r.action) && r.optional);
+    if (later.length) this.log.log('[SharePoint] not yet created (kept on this server until they are): ' + later.map((m) => m.list).join(', '));
     if (missing.length) throw new Error('SharePoint lists/columns missing: ' + missing.map((m) => m.list + ' (' + m.action + ')').join('; ') + '. Run: node scripts/sharepoint-setup.js --create  (or sharepoint/create-lists.ps1)');
     if (this.hasState) await this._flush(db);
     const data = await this.readAll();
-    const spEmpty = LISTS.every((l) => data[l.key].length === 0);
+    const spEmpty = LISTS.every((l) => !data[l.key] || data[l.key].length === 0);
     const localHas = LISTS.some((l) => (db[l.key] || []).length > 0);
     if (spEmpty && localHas) {
       this.log.log('[SharePoint] lists are empty — uploading the local data');
@@ -362,7 +366,7 @@ class SharePointStore {
       return { migrated: r.sent };
     }
     await this.apply(db, data);
-    return { loaded: LISTS.reduce((a, l) => a + data[l.key].length, 0) };
+    return { loaded: LISTS.reduce((a, l) => a + (data[l.key] ? data[l.key].length : 0), 0) };
   }
 
   /** Periodic refresh. `revFn()` returns the server's change counter. */

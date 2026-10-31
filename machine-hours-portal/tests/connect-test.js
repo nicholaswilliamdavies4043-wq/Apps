@@ -41,7 +41,7 @@ async function api(method, p, body, token) {
   ok(st.mode === 'sharepoint' && st.connected && st.config.siteUrl === 'https://contoso.sharepoint.com/sites/MachineHours' && st.config.tenantId === 'contoso.onmicrosoft.com' && st.config.secretSet && !JSON.stringify(st).includes('"secret"'),
     'status: SharePoint, link cleaned to the site, tenant worked out, secret not sent back');
   const ms = await (await fetch(MOCK + '/v1.0/_test/state', { headers: { Authorization: 'Bearer mock-token' } })).json();
-  ok(ms.lists.length === 12 && ms.lists.find((l) => l.name === 'MHP_ShiftEntries').count === 240, 'lists created automatically and filled');
+  ok(ms.lists.length === 16 && ms.lists.find((l) => l.name === 'MHP_ShiftEntries').count === 240, 'lists created automatically and filled');
   ok(fs.readdirSync(DATA_DIR + '/backups').some((f) => f.startsWith('before-sharepoint-')), 'backup taken before switching');
   ok(fs.existsSync(DATA_DIR + '/storage.json'), 'connection saved for next start');
   // new data goes to SharePoint without restart

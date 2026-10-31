@@ -57,6 +57,11 @@ function handle(method, url, body) {
     if (method === 'DELETE') { delete files[m[1]]; return [204, null]; }
   }
   // test helpers
+  if (p === '/_test/droplist' && method === 'POST') { // simulate an older site that does not have a list yet
+    const l = Object.values(lists).find((x) => x.displayName === u.searchParams.get('list'));
+    if (l) delete lists[l.id];
+    return [200, { dropped: !!l }];
+  }
   if (p === '/_test/state') return [200, { stats, lists: Object.values(lists).map((l) => ({ name: l.displayName, count: l.items.size, columns: l.columns.length })), files: Object.keys(files) }];
   if (p === '/_test/items' && method === 'GET') { const l = Object.values(lists).find((x) => x.displayName === u.searchParams.get('list')); return [200, l ? Array.from(l.items.values()) : []]; }
   if (p === '/_test/edit' && method === 'POST') { // simulate a person editing a SharePoint item

@@ -208,6 +208,67 @@ Ensure-Field $n "SiteId" "Text" $true
 Ensure-Field $n "SiteName" "Text" $false
 Ensure-Field $n "Details" "Note" $false
 
+# ---- MineLevels - Mine levels used for bucket counts
+$n = $Prefix + "MineLevels"
+Ensure-List $n "Machine Hours Portal - Mine levels used for bucket counts"
+Ensure-Field $n "AppId" "Text" $true
+Ensure-Field $n "AppJson" "Note" $false
+Ensure-Field $n "SiteId" "Text" $true
+Ensure-Field $n "SiteName" "Text" $false
+
+# ---- BucketCounts - Loader bucket counts saved per mine level and shift
+$n = $Prefix + "BucketCounts"
+Ensure-List $n "Machine Hours Portal - Loader bucket counts saved per mine level and shift"
+Ensure-Field $n "AppId" "Text" $true
+Ensure-Field $n "AppJson" "Note" $false
+Ensure-Field $n "SiteId" "Text" $true
+Ensure-Field $n "SiteName" "Text" $false
+Ensure-Field $n "MachineId" "Text" $true
+Ensure-Field $n "MachineName" "Text" $false
+Ensure-Field $n "MineLevel" "Text" $false
+Ensure-Field $n "Buckets" "Number" $false
+Ensure-Field $n "BucketsPerTruck" "Number" $false
+Ensure-Field $n "Trucks" "Number" $false
+Ensure-Field $n "ShiftDate" "Text" $true
+Ensure-Field $n "Shift" "Text" $false
+Ensure-Field $n "AutoSaved" "Boolean" $false
+Ensure-Field $n "SavedBy" "Text" $false
+Ensure-Field $n "SavedAtUtc" "DateTime" $false
+
+# ---- Inventory - Inventory items with location and quantity (quantity changes only through picks, receipts and counts in the app)
+$n = $Prefix + "Inventory"
+Ensure-List $n "Machine Hours Portal - Inventory items with location and quantity (quantity changes only through picks, receipts and counts in the app)"
+Ensure-Field $n "AppId" "Text" $true
+Ensure-Field $n "AppJson" "Note" $false
+Ensure-Field $n "SiteId" "Text" $true
+Ensure-Field $n "SiteName" "Text" $false
+Ensure-Field $n "PartNo" "Text" $false
+Ensure-Field $n "StockLocation" "Text" $false
+Ensure-Field $n "Quantity" "Number" $false
+Ensure-Field $n "Unit" "Text" $false
+Ensure-Field $n "MinQty" "Number" $false
+Ensure-Field $n "LowStock" "Boolean" $false
+Ensure-Field $n "ItemNotes" "Note" $false
+
+# ---- InventoryMovements - Every pick, receipt and stock count
+$n = $Prefix + "InventoryMovements"
+Ensure-List $n "Machine Hours Portal - Every pick, receipt and stock count"
+Ensure-Field $n "AppId" "Text" $true
+Ensure-Field $n "AppJson" "Note" $false
+Ensure-Field $n "SiteId" "Text" $true
+Ensure-Field $n "SiteName" "Text" $false
+Ensure-Field $n "ItemId" "Text" $true
+Ensure-Field $n "ItemName" "Text" $false
+Ensure-Field $n "StockLocation" "Text" $false
+Ensure-Field $n "MoveType" "Text" $false
+Ensure-Field $n "QtyChange" "Number" $false
+Ensure-Field $n "QtyAfter" "Number" $false
+Ensure-Field $n "MachineId" "Text" $false
+Ensure-Field $n "MachineName" "Text" $false
+Ensure-Field $n "MovedBy" "Text" $false
+Ensure-Field $n "MovedAtUtc" "DateTime" $false
+Ensure-Field $n "Note" "Note" $false
+
 if ($GrantAppId) {
   Write-Host "Granting Write on this site to app $GrantAppId (Sites.Selected)"
   Grant-PnPAzureADAppSitePermission -AppId $GrantAppId -DisplayName "Machine Hours Portal" -Permissions Write -Site $SiteUrl

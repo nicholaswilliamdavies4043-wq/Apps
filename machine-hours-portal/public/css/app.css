@@ -164,7 +164,7 @@ svg.i { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-widt
 .view-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px; margin: 0 110px 20px 0; }
 .view-head h2 { font-size: clamp(24px, 2.6vw, 34px); font-weight: 700; text-shadow: 0 2px 10px rgba(0,0,0,.4); }
 .view-head .sub { color: #d6dde4; margin-top: 4px; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
-.head-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.head-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; min-width: 0; max-width: 100%; }
 
 .subtabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(0,0,0,.45); border: 1px solid var(--line); backdrop-filter: blur(8px); overflow-x: auto; max-width: 100%; }
 .subtabs button { border: 0; background: none; padding: 8px 16px; border-radius: 999px; cursor: pointer; font-weight: 600; color: #cfd6dd; white-space: nowrap; transition: background .2s, color .2s; }
@@ -368,6 +368,11 @@ input[type=checkbox] { accent-color: var(--sv-gold); width: 16px; height: 16px; 
 @keyframes pulse { 50% { opacity: .45; } }
 .maint-card.soon { border-color: rgba(242,179,61,.4); }
 
+/* ---------- inventory ---------- */
+.inv-tbl tr.low td { background: rgba(242,179,61,.07); }
+.inv-tbl td.acts { white-space: nowrap; }
+.inv-tbl td.acts .btn { margin-left: 4px; vertical-align: middle; height: 32px; min-height: 32px; }
+
 /* ---------- bucket counter (loader cards) ---------- */
 .bucket { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: rgba(160,140,100,.10); border: 1px solid rgba(160,140,100,.35); }
 .bucket .bk-h { display: flex; align-items: center; justify-content: space-between; min-height: 28px; }
@@ -378,6 +383,14 @@ input[type=checkbox] { accent-color: var(--sv-gold); width: 16px; height: 16px; 
 .bucket .bk-v { text-align: center; min-width: 0; }
 .bucket .bk-v b { display: block; font-size: 34px; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .bucket .bk-v span { display: block; font-size: 12.5px; color: var(--muted); }
+.bucket .bk-level { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; }
+.bucket .bk-level > span { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.bucket .bk-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.bucket .bk-actions .btn { min-height: 44px; justify-content: center; }
+.bucket .bk-actions .btn:only-child { grid-column: 1 / -1; }
+.bucket .bk-saved { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
+.bucket .bk-h .hint { font-size: 11.5px; white-space: nowrap; }
+.bucket .bk-l { white-space: nowrap; }
 
 /* ---------- live preview row (shift entry) ---------- */
 .preview { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-top: 14px; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.25); border: 1px dashed var(--line-2); }
@@ -536,6 +549,7 @@ input[type=checkbox] { accent-color: var(--sv-gold); width: 16px; height: 16px; 
   .site-btn { max-width: 140px; }
   .view-head { margin-right: 0; margin-top: 44px; }
   .view-head h2 { font-size: 24px; }
+  .subtabs button { padding: 8px 11px; font-size: 13.5px; }
   .kpi .v { font-size: 24px; }
   .card { padding: 14px; border-radius: 14px; }
   .form-grid { grid-template-columns: 1fr 1fr; }

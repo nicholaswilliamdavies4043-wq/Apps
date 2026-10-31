@@ -207,3 +207,72 @@ Critical changes (who, what, when)
 | SiteId | text | yes |  |
 | SiteName | text |  |  |
 | Details | note |  |  |
+
+## MHP_MineLevels
+
+Mine levels used for bucket counts
+
+| Column | Type | Indexed | |
+|---|---|---|---|
+| Title | text |  | ✎ name |
+| SiteId | text | yes |  |
+| SiteName | text |  | ƒ |
+
+## MHP_BucketCounts
+
+Loader bucket counts saved per mine level and shift
+
+| Column | Type | Indexed | |
+|---|---|---|---|
+| Title | text |  | ƒ label |
+| SiteId | text | yes |  |
+| SiteName | text |  | ƒ |
+| MachineId | text | yes |  |
+| MachineName | text |  | ƒ |
+| MineLevel | text |  | ✎ |
+| Buckets | number |  | ✎ |
+| BucketsPerTruck | number |  |  |
+| Trucks | number |  | ƒ |
+| ShiftDate | text | yes |  |
+| Shift | text |  |  |
+| AutoSaved | boolean |  | ƒ |
+| SavedBy | text |  |  |
+| SavedAtUtc | dateTime |  | ƒ |
+
+## MHP_Inventory
+
+Inventory items with location and quantity (quantity changes only through picks, receipts and counts in the app)
+
+| Column | Type | Indexed | |
+|---|---|---|---|
+| Title | text |  | ✎ name |
+| SiteId | text | yes |  |
+| SiteName | text |  | ƒ |
+| PartNo | text |  | ✎ |
+| StockLocation | text |  | ✎ |
+| Quantity | number |  |  |
+| Unit | text |  | ✎ |
+| MinQty | number |  | ✎ |
+| LowStock | boolean |  | ƒ |
+| ItemNotes | note |  | ✎ |
+
+## MHP_InventoryMovements
+
+Every pick, receipt and stock count
+
+| Column | Type | Indexed | |
+|---|---|---|---|
+| Title | text |  | ƒ label |
+| SiteId | text | yes |  |
+| SiteName | text |  | ƒ |
+| ItemId | text | yes |  |
+| ItemName | text |  |  |
+| StockLocation | text |  |  |
+| MoveType | text |  |  |
+| QtyChange | number |  |  |
+| QtyAfter | number |  |  |
+| MachineId | text |  |  |
+| MachineName | text |  | ƒ |
+| MovedBy | text |  |  |
+| MovedAtUtc | dateTime |  | ƒ |
+| Note | note |  |  |

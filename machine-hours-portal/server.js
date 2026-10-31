@@ -545,6 +545,9 @@ function tick() {
     const out = Core.checkMaintenance(db, Date.now());
     if (out.dirty) save();
     if (out.events.length) broadcast(out.events);
+    // shift change (06:00 / 18:00 GMT): unsaved bucket counts are saved to their level and the counters start again
+    const roll = Core.rollBuckets(db, Date.now());
+    if (roll.dirty) { save(); broadcast(roll.events); }
     if (out.emails.length) sendEmails(out.emails);
     const cutoff = Date.now() - 90 * Core.DAY; // expire sessions idle > 90 days
     for (const [t, x] of Object.entries(db.sessions)) if ((x.lastSeen || x.createdAt) < cutoff) { delete db.sessions[t]; save(); }

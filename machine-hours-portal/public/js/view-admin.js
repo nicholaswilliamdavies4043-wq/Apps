@@ -7,7 +7,8 @@
 
   const SETTINGS = [
     ['allowUserSiteCreate', 'bool', 'Regular users can create mine sites', 'Off: only superusers create sites and load the sample site.'],
-    ['allowUserListEdit', 'bool', 'Regular users can edit operator & telehut lists', 'Add or remove names in Site setup.'],
+    ['allowUserListEdit', 'bool', 'Regular users can edit operator, telehut & mine level lists', 'Add or remove names in Site setup.'],
+    ['allowUserInventoryEdit', 'bool', 'Regular users can add inventory items and receive stock', 'Everyone can always pick items. Off: only superusers add items, receive stock and correct counts.'],
     ['allowUserMaintCreate', 'bool', 'Regular users can schedule maintenance', 'Everyone can always mark maintenance as complete.'],
     ['allowUserMaintEdit', 'bool', 'Regular users can edit and delete maintenance schedules', 'Off: only superusers change or remove schedules.'],
     ['entryEditHours', 'num', 'Hours a user can edit or delete their own shift rows', 'After this, only superusers can change the row. 0 = never.']

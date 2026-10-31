@@ -12,7 +12,8 @@
   const BASE_NAV = [
     { tab: 'sites', label: 'Site Definition', icon: 'site', subs: [['list', 'All sites'], ['setup', 'Site setup']] },
     { tab: 'dashboard', label: 'Dashboard', icon: 'gauge' },
-    { tab: 'fleet', label: 'Fleet Monitoring', icon: 'fleet', subs: [['overview', 'Overview'], ['log', 'Shift log'], ['maintenance', 'Maintenance']] },
+    { tab: 'fleet', label: 'Fleet Monitoring', icon: 'fleet', subs: [['overview', 'Overview'], ['log', 'Shift log'], ['buckets', 'Buckets'], ['maintenance', 'Maintenance']] },
+    { tab: 'inventory', label: 'Inventory', icon: 'box', subs: [['items', 'Items'], ['moves', 'Movements']] },
     { tab: 'chat', label: 'Chat', icon: 'chat', subs: [['general', 'Channels'], ['announcements', 'Announcements']] }
   ];
   const ADMIN_NAV = { tab: 'admin', label: 'Superuser', icon: 'shield', subs: [['users', 'Users & roles'], ['settings', 'App settings'], ['audit', 'Audit log'], ['storage', 'Data source']] };
@@ -30,7 +31,7 @@
     can(what) {
       if (App.isSuper()) return true;
       const st = S.settings || {};
-      return { createSite: st.allowUserSiteCreate, listEdit: st.allowUserListEdit, maintEdit: st.allowUserMaintEdit, maintCreate: st.allowUserMaintCreate !== false, super: false }[what] || false;
+      return { createSite: st.allowUserSiteCreate, listEdit: st.allowUserListEdit, maintEdit: st.allowUserMaintEdit, maintCreate: st.allowUserMaintCreate !== false, invEdit: st.allowUserInventoryEdit !== false, super: false }[what] || false;
     },
     canEditEntry(e) {
       if (App.isSuper()) return true;
@@ -216,6 +217,9 @@
       set('[data-badge="fleet"]', overdue || '');
       set('[data-subbadge="fleet-maintenance"]', overdue || '');
       set('[data-badge="chat"]', un.total || '');
+      const lowStock = Views.inventory ? Views.inventory.lowCount() : 0;
+      set('[data-badge="inventory"]', lowStock || '');
+      set('[data-subbadge="inventory-items"]', lowStock || '');
       set('[data-subbadge="chat-general"]', (un.total - (un.announcements || 0)) || '');
       set('[data-subbadge="chat-announcements"]', un.announcements || '');
       const nUn = S.notifs.filter((n) => !n.read).length;

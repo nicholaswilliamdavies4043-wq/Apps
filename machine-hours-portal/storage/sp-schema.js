@@ -190,6 +190,65 @@ const LISTS = [
       ['SiteName', 'text', 'siteName'],
       ['Details', 'note', 'details']
     ]
+  },
+  // Lists added in v1.3. `optional`: a site that has not created them yet keeps working (these records then stay on the server only).
+  {
+    key: 'levels', name: 'MineLevels', desc: 'Mine levels used for bucket counts', optional: true,
+    title: (i) => i.name, editTitle: 'name',
+    cols: [['SiteId', 'text', 'siteId', { indexed: true }], ['SiteName', 'text', siteName]]
+  },
+  {
+    key: 'bucketLogs', name: 'BucketCounts', desc: 'Loader bucket counts saved per mine level and shift', optional: true,
+    title: (i, c) => c.machineName(i.machineId) + ' · ' + (i.level || 'no level') + ' · ' + i.date + ' ' + i.shift,
+    cols: [
+      ['SiteId', 'text', 'siteId', { indexed: true }],
+      ['SiteName', 'text', siteName],
+      ['MachineId', 'text', 'machineId', { indexed: true }],
+      ['MachineName', 'text', machineName],
+      ['MineLevel', 'text', 'level', { edit: 'level' }],
+      ['Buckets', 'number', 'buckets', { edit: (i, v) => { const n = Number(v); if (Number.isInteger(n) && n >= 0) i.buckets = n; } }],
+      ['BucketsPerTruck', 'number', 'perTruck'],
+      ['Trucks', 'number', (i) => (i.perTruck > 0 ? Math.round((i.buckets / i.perTruck) * 100) / 100 : null)],
+      ['ShiftDate', 'text', 'date', { indexed: true }],
+      ['Shift', 'text', 'shift'],
+      ['AutoSaved', 'boolean', (i) => !!i.auto],
+      ['SavedBy', 'text', 'createdByName'],
+      ['SavedAtUtc', 'dateTime', (i) => iso(i.createdAt)]
+    ]
+  },
+  {
+    key: 'inventory', name: 'Inventory', desc: 'Inventory items with location and quantity (quantity changes only through picks, receipts and counts in the app)', optional: true,
+    title: (i) => i.name, editTitle: 'name',
+    cols: [
+      ['SiteId', 'text', 'siteId', { indexed: true }],
+      ['SiteName', 'text', siteName],
+      ['PartNo', 'text', 'partNo', { edit: 'partNo' }],
+      ['StockLocation', 'text', 'location', { edit: 'location' }],
+      ['Quantity', 'number', 'quantity'],
+      ['Unit', 'text', 'unit', { edit: 'unit' }],
+      ['MinQty', 'number', 'minQty', { edit: 'minQty' }],
+      ['LowStock', 'boolean', (i) => i.minQty != null && (i.quantity || 0) <= i.minQty],
+      ['ItemNotes', 'note', 'notes', { edit: 'notes' }]
+    ]
+  },
+  {
+    key: 'invLog', name: 'InventoryMovements', desc: 'Every pick, receipt and stock count', optional: true,
+    title: (i) => i.itemName + ' · ' + i.kind,
+    cols: [
+      ['SiteId', 'text', 'siteId', { indexed: true }],
+      ['SiteName', 'text', siteName],
+      ['ItemId', 'text', 'itemId', { indexed: true }],
+      ['ItemName', 'text', 'itemName'],
+      ['StockLocation', 'text', 'location'],
+      ['MoveType', 'text', 'kind'],
+      ['QtyChange', 'number', 'change'],
+      ['QtyAfter', 'number', 'qtyAfter'],
+      ['MachineId', 'text', 'machineId'],
+      ['MachineName', 'text', (i, c) => (i.machineId ? c.machineName(i.machineId) : null)],
+      ['MovedBy', 'text', 'by'],
+      ['MovedAtUtc', 'dateTime', (i) => iso(i.at)],
+      ['Note', 'note', 'note']
+    ]
   }
 ];
 

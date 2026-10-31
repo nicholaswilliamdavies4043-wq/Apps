@@ -32,7 +32,7 @@ async function api(base, method, p, body, token) {
 (async () => {
   const st = await mock('/_test/state');
   const by = Object.fromEntries(st.lists.map((l) => [l.name, l]));
-  ok(st.lists.length === 12, '12 SharePoint lists created: ' + st.lists.map((l) => l.name).join(', '));
+  ok(st.lists.length === 16, '16 SharePoint lists created: ' + st.lists.map((l) => l.name).join(', '));
   ok(by.MHP_ShiftEntries.count > 200, 'ShiftEntries rows in SharePoint: ' + by.MHP_ShiftEntries.count);
   ok(by.MHP_Sites.count === 2 && by.MHP_Machines.count === 4, 'sites ' + by.MHP_Sites.count + ', machines ' + by.MHP_Machines.count);
   ok(by.MHP_AuditLog.count > 3 && by.MHP_Users.count >= 2 && by.MHP_Widgets.count === 1, 'audit ' + by.MHP_AuditLog.count + ', users ' + by.MHP_Users.count + ', widgets ' + by.MHP_Widgets.count);
