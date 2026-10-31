@@ -543,7 +543,23 @@
 
   // keep the app on the device (needs https:// or localhost)
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    // When a new version of the app takes over, reload once so the new files are used straight away
+    // (not on the very first install, when nothing was controlling the page yet).
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloading = false;
+    // never throw away something being typed: if a form is open or filled in, wait until the app is in the background
+    const busy = () => !!document.querySelector('.modal') ||
+      Array.from(document.querySelectorAll('.entry-form input:not([type=date]):not([type=hidden]), form textarea, [data-annform] input')).some((i) => i.value && i.name !== 'shift');
+    const reloadNow = () => { if (reloading) return; reloading = true; location.reload(); };
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloading) return;
+      if (!busy()) return reloadNow();
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') reloadNow(); });
+    });
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      // look for a new version whenever the app is brought back to the front (phones keep it open for days)
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    }).catch(() => {}));
   }
   API.on((ev) => App.onEvent(ev));
   API.init().then(() => App.start());
