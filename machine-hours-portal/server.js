@@ -6,7 +6,7 @@
  *   node server.js --reset-password=EMAIL   → print a new one-time setup code for a superuser
  *
  * Settings come from environment variables or a .env file (see .env.example):
- *   PORT, HOST, DATA_DIR, APP_URL, SUPERUSER_EMAILS, STORAGE=file|sharepoint, SP_*, SMTP_*
+ *   PORT, HOST, DATA_DIR, APP_URL, SUPERUSER_EMAILS, STORAGE=file|sharepoint|postgres, DATABASE_URL, DATABASE_SSL, SP_*, SMTP_*
  */
 'use strict';
 const http = require('http');
@@ -30,7 +30,8 @@ const APP_URL = process.env.APP_URL || ('http://localhost:' + PORT);
 // The built-in owner (Core.DEFAULT_OWNERS) is always included; SUPERUSER_EMAILS adds more owners.
 const OWNERS = Array.from(new Set(Core.DEFAULT_OWNERS.concat((process.env.SUPERUSER_EMAILS || '').split(','))
   .map((e) => e.trim().toLowerCase()).filter(Boolean)));
-const STORAGE = (process.env.STORAGE || 'file').toLowerCase();
+// With DATABASE_URL set and no explicit STORAGE, use PostgreSQL so data survives restarts/redeploys.
+const STORAGE = (process.env.STORAGE || (process.env.DATABASE_URL ? 'postgres' : 'file')).toLowerCase();
 if (!['file', 'sharepoint', 'postgres'].includes(STORAGE)) throw new Error('STORAGE must be file, sharepoint, or postgres');
 
 fs.mkdirSync(path.join(DATA_DIR, 'backups'), { recursive: true });

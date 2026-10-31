@@ -7,12 +7,33 @@
 
 const { Pool } = require('pg');
 
+/*
+ * TLS setting for the connection:
+ *  - DATABASE_SSL=true|false always wins.
+ *  - sslmode=disable in the URL turns TLS off.
+ *  - Render's Internal Database URL uses a private host without a domain
+ *    (e.g. dpg-xxxx-a), and localhost needs no TLS either, so no TLS for those.
+ *  - Anything else (e.g. Render's External Database URL) uses TLS.
+ */
+function sslOption(connectionString) {
+  const flag = (process.env.DATABASE_SSL || '').toLowerCase();
+  if (flag === 'false') return false;
+  if (flag === 'true') return { rejectUnauthorized: false };
+  let host = '';
+  try {
+    const u = new URL(connectionString);
+    if ((u.searchParams.get('sslmode') || '').toLowerCase() === 'disable') return false;
+    host = u.hostname;
+  } catch (e) { /* unparsable URL: let pg handle it, default to TLS */ }
+  if (host && (!host.includes('.') || host === '127.0.0.1')) return false;
+  return { rejectUnauthorized: false };
+}
+
 class PostgresStore {
   constructor(options) {
     this.pool = new Pool({
       connectionString: options.connectionString,
-      // Render databases support TLS. Disable only when explicitly requested.
-      ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
+      ssl: sslOption(options.connectionString),
       max: 5,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000
@@ -87,4 +108,4 @@ class PostgresStore {
   }
 }
 
-module.exports = { PostgresStore };
+module.exports = { PostgresStore, sslOption };
