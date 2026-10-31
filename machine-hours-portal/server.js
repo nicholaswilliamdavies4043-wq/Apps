@@ -431,12 +431,18 @@ async function api(req, res, url) {
       const cfg = storageConfig();
       if (req.method === 'GET' && !seg[2]) {
         const conf = cfg ? { source: cfg.source, siteUrl: cfg.siteUrl, clientId: cfg.clientId, tenantId: cfg.tenantId || tenantFromSite(cfg.siteUrl), prefix: cfg.prefix, secretSet: !!cfg.clientSecret } : null;
+        if (pgStore) {
+          // name the database without exposing the user name or password from DATABASE_URL
+          let database = null; try { const u = new URL(process.env.DATABASE_URL); database = u.pathname.replace(/^\//, '') + ' @ ' + u.hostname; } catch (e) { /* unparsable */ }
+          return send(res, 200, Object.assign({ mode: 'postgres', database, cacheFile: DB_FILE, config: null }, pgStore.status));
+        }
         return send(res, 200, sp ? Object.assign({}, sp.status, { prefix: sp.o.prefix, config: conf }) : { mode: 'file', file: DB_FILE, connected: true, config: conf });
       }
       if (seg[2] === 'script' && req.method === 'GET') {
         res.writeHead(200, Object.assign({ 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': 'attachment; filename="create-lists.ps1"' }, SEC_HEADERS));
         return res.end(fs.readFileSync(path.join(__dirname, 'sharepoint', 'create-lists.ps1')));
       }
+      if ((seg[2] === 'test' || seg[2] === 'connect') && req.method === 'POST' && pgStore) throw httpErr(400, 'This server keeps its data in PostgreSQL (DATABASE_URL). Remove DATABASE_URL and STORAGE=postgres from the server environment first.');
       if ((seg[2] === 'test' || seg[2] === 'connect') && req.method === 'POST') {
         if (cfg && cfg.source === 'env') throw httpErr(400, 'SharePoint is configured in the server .env file — change it there');
         const old = cfg || {};

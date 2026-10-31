@@ -234,8 +234,20 @@
     const draw = async () => {
       let st;
       try { st = await API.get('admin/storage'); } catch (e) { box.innerHTML = '<div class="card"><div class="empty">' + esc(e.message) + '</div></div>'; return; }
-      const spMode = st.mode === 'sharepoint';
+      const spMode = st.mode === 'sharepoint', pgMode = st.mode === 'postgres';
       const fromEnv = st.config && st.config.source === 'env';
+      if (pgMode) {
+        box.innerHTML =
+          '<div class="grid g-kpi">' +
+          '<div class="card kpi" style="--c:var(--sv-gold)"><div class="l">' + icon('cpu') + 'Data source</div><div class="v" style="font-size:22px">PostgreSQL</div><div class="s" style="word-break:break-all">' + esc(st.database || '') + '</div></div>' +
+          '<div class="card kpi" style="--c:' + (st.connected ? 'var(--ok)' : 'var(--bad)') + '"><div class="l">Connection</div><div class="v" style="font-size:22px">' + (st.connected ? 'Connected' : 'Not connected') + '</div><div class="s">' + (st.connected ? 'Working normally' : 'Changes are kept on this server until the database answers') + '</div></div>' +
+          '<div class="card kpi"><div class="l">Last saved</div><div class="v" style="font-size:18px">' + (st.lastSave ? esc(ago(Date.parse(st.lastSave))) : 'not since start') + '</div><div class="s">to the database</div></div>' +
+          '</div>' +
+          (st.lastError ? '<div class="card ann critical"><div class="ico">' + icon('alert') + '</div><div><h4>Last error</h4><p>' + esc(st.lastError) + '</p></div></div>' : '') +
+          '<div class="card"><p class="muted" style="margin:0">All data is stored in the PostgreSQL database set by <span class="kbd">DATABASE_URL</span> in the server environment, so it survives restarts and redeploys. ' +
+          'The server keeps a working copy in <span class="kbd">' + esc(st.cacheFile || '') + '</span>. To change the database, change <span class="kbd">DATABASE_URL</span> where the server is hosted.</p></div>';
+        return;
+      }
       box.innerHTML =
         '<div class="grid g-kpi">' +
         '<div class="card kpi" style="--c:var(--sv-gold)"><div class="l">' + icon('cpu') + 'Data source</div><div class="v" style="font-size:22px">' + (spMode ? 'SharePoint' : 'This server (file)') + '</div><div class="s" style="word-break:break-all">' + esc(spMode ? st.siteUrl || '' : st.file || '') + '</div></div>' +
@@ -243,6 +255,8 @@
           '<div class="card kpi ' + (st.pending ? 'warn' : '') + '" style="--c:var(--warn)"><div class="l">Waiting to send</div><div class="v">' + (st.pending || 0) + '</div><div class="s">changes not yet in SharePoint</div></div>' +
           '<div class="card kpi"><div class="l">Last sync</div><div class="v" style="font-size:18px">' + (st.lastFlush ? esc(ago(st.lastFlush)) : '–') + '</div><div class="s">last read: ' + (st.lastPull ? esc(ago(st.lastPull)) : '–') + '</div></div>' : '') +
         '</div>' +
+        (!spMode ? '<div class="card ann important"><div class="ico">' + icon('alert') + '</div><div><h4>Data is kept in a file on this server</h4><p>On hosting services such as Render, this file is wiped on every restart or redeploy. ' +
+          'For permanent storage, add <span class="kbd">DATABASE_URL</span> (PostgreSQL) to the server environment, or connect SharePoint below.</p></div></div>' : '') +
         (st.lastError ? '<div class="card ann critical"><div class="ico">' + icon('alert') + '</div><div><h4>Last error' + (st.lastErrorAt ? ' · ' + esc(ago(st.lastErrorAt)) : '') + '</h4><p>' + esc(st.lastError) + '</p></div></div>' : '') +
         (spMode ? '<div class="card"><div class="card-h"><h3>' + icon('refresh') + 'SharePoint</h3><div class="row"><button class="btn" data-check>' + icon('check') + ' Check lists</button><button class="btn primary" data-sync>' + icon('refresh') + ' Sync now</button>' +
           (fromEnv ? '' : '<button class="btn danger" data-disconnect>' + icon('x') + ' Disconnect</button>') + '</div></div>' +
