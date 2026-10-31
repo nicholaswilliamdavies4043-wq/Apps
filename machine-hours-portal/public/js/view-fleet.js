@@ -22,6 +22,32 @@
     return h || '<span class="muted">—</span>';
   }
 
+  /** "2 trucks + 1 bucket" style text for a bucket count. */
+  function truckText(buckets, perTruck) {
+    const te = Core.truckEq(buckets, perTruck);
+    if (!te) return null;
+    const pl = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+    if (!te.rest) return pl(te.full, 'truck');
+    if (!te.full) return te.rest + '/' + perTruck + ' of a truck';
+    return pl(te.full, 'truck') + ' + ' + pl(te.rest, 'bucket');
+  }
+
+  const nOrDec = (x) => (Number.isInteger(x) ? String(x) : num1(x));
+
+  /** Live bucket counter shown on a loader's card. */
+  function bucketBox(m) {
+    const n = m.bucketCount || 0;
+    const tt = truckText(n, m.bucketsPerTruck);
+    return '<div class="bucket" data-bk="' + m.id + '">' +
+      '<div class="bk-h"><span class="bk-l">' + icon('fleet') + 'Bucket count</span>' +
+      (n ? '<button class="btn sm ghost" data-breset="' + m.id + '" title="Set the counter back to 0">Reset</button>' : '') + '</div>' +
+      '<div class="bk-row"><button class="btn bk-btn" data-bdec="' + m.id + '" aria-label="Remove one bucket" ' + (n ? '' : 'disabled') + '>−</button>' +
+      '<div class="bk-v"><b data-bkn>' + n + '</b><span data-bkt>' + (!m.bucketsPerTruck ? 'Set buckets per truck in Site setup' : n ? '= ' + esc(tt) : 'Tap + for each bucket') + '</span></div>' +
+      '<button class="btn bk-btn primary" data-binc="' + m.id + '" aria-label="Add one bucket">+</button></div>' +
+      (m.bucketsPerTruck ? '<div class="hint">' + nOrDec(m.bucketsPerTruck) + ' buckets = 1 truck' + (n && m.bucketCountBy ? ' · last count by ' + esc(m.bucketCountBy) : '') + '</div>' : '') +
+      '</div>';
+  }
+
   function head(sub) {
     return '<div class="view-head"><div><h2>Fleet Monitoring</h2><div class="sub">' + esc(App.site.name) + ' · live machine status, hour meters and maintenance countdowns</div></div>' +
       '<div class="head-actions"><div class="subtabs">' + [['overview', 'Overview'], ['log', 'Shift log'], ['maintenance', 'Maintenance']].map(([k, l]) =>
@@ -62,7 +88,10 @@
           '<div class="meters"><div class="meter"><div class="l"><i style="background:' + TR + '"></i>TR meter</div><div class="v">' + num1(mt.tr) + '</div></div>' +
           '<div class="meter"><div class="l"><i style="background:' + RCC + '"></i>RCC meter</div><div class="v">' + num1(mt.rcc) + '</div></div></div>' +
           '<div><div class="row" style="justify-content:space-between"><span class="muted" style="font-size:12px">' + UI.monthLabel(month) + ': <b style="color:#fff">' + num1(pm.total) + ' h</b> in ' + pm.shifts + ' shifts</span>' + splitBar(pm.tr, pm.rcc) + '</div>' +
+          '<div class="hint">Manual: <b style="color:#fff">' + num1(pm.manual || 0) + ' h</b>' +
+            (Core.isLoader(m) && pm.buckets ? ' · Buckets: <b style="color:#fff">' + pm.buckets + '</b>' + (pm.trucks != null ? ' ≈ ' + num1(pm.trucks) + ' trucks' : '') : '') + '</div>' +
           spark(series, '#A08C64') + '<div class="hint" style="margin-top:-4px">Last 14 days · last operator: ' + esc(mt.lastOperator || '–') + '</div></div>' +
+          (Core.isLoader(m) && !inactive ? bucketBox(m) : '') +
           (nx ? '<div class="next-maint">' + ring(nx.st.pct, stColor(nx.st.status), Math.round(nx.st.pct * 100) + '%') +
             '<div style="flex:1;min-width:0"><div class="row" style="gap:6px"><b style="font-size:13.5px">' + esc(nx.m.title) + '</b><span class="pill ' + nx.st.status + '">' + statusLabel(nx.st.status) + '</span></div>' + dueText(nx.m, nx.st) + '</div></div>'
             : '<div class="next-maint"><span class="muted">No maintenance scheduled</span></div>') +
@@ -77,8 +106,29 @@
       try { await API.put('machines/' + s.dataset.status, { status: s.value }); toast(App.machineName(s.dataset.status) + ' → ' + s.value); }
       catch (er) { toast(er.message, 'err'); }
     });
-    wrap.addEventListener('click', (e) => {
+    wrap.addEventListener('click', async (e) => {
       const b = e.target.closest('button'); if (!b) return;
+      const bid = b.dataset.binc || b.dataset.bdec;
+      if (bid) {
+        const m = S.data.machines.find((x) => x.id === bid); if (!m) return;
+        const delta = b.dataset.binc ? 1 : -1;
+        const box = b.closest('[data-bk]');
+        const next = Math.max(0, Number($('[data-bkn]', box).textContent) + delta);
+        // show the new count straight away; the server's answer (and other devices) follow via live updates
+        $('[data-bkn]', box).textContent = next;
+        if (m.bucketsPerTruck) $('[data-bkt]', box).textContent = next ? '= ' + truckText(next, m.bucketsPerTruck) : 'Tap + for each bucket';
+        $('[data-bdec]', box).disabled = !next;
+        try { await API.post('machines/' + bid + '/buckets', { delta, opId: Core.uid('bk_') }); }
+        catch (er) { toast(er.message, 'err'); }
+        return;
+      }
+      if (b.dataset.breset) {
+        const m = S.data.machines.find((x) => x.id === b.dataset.breset);
+        if (!m || !(await confirmBox('Set the bucket count for ' + m.name + ' back to 0? (' + (m.bucketCount || 0) + ' buckets counted)', { okText: 'Reset' }))) return;
+        try { await API.post('machines/' + m.id + '/buckets', { set: 0, opId: Core.uid('bk_') }); toast(m.name + ': bucket count reset'); }
+        catch (er) { toast(er.message, 'err'); }
+        return;
+      }
       if (b.dataset.logm) openEntryModal(null, { machineId: b.dataset.logm });
       if (b.dataset.schedm) maintModal(null, b.dataset.schedm);
       if (b.dataset.hist) historyModal(b.dataset.hist);
@@ -122,16 +172,35 @@
       '<label class="field"><span>Operator</span><select class="inp in" name="operator">' + opts(S.data.operators.map((o) => o.name).concat(e.operator && !S.data.operators.some((o) => o.name === e.operator) ? [e.operator] : []), e.operator, '— select —') + '</select></label>' +
       '<label class="field"><span>TR end reading</span><input class="inp in" type="number" step="0.1" inputmode="decimal" name="trEnd" required value="' + (e.trEnd != null ? e.trEnd : '') + '"></label>' +
       '<label class="field"><span>RCC end reading</span><input class="inp in" type="number" step="0.1" inputmode="decimal" name="rccEnd" required value="' + (e.rccEnd != null ? e.rccEnd : '') + '"></label>' +
+      '<label class="field" data-bfield><span>Buckets <span data-bsrc class="faint"></span></span><input class="inp in" type="number" step="1" min="0" inputmode="numeric" name="buckets" value="' + (e.buckets != null ? e.buckets : '') + '"></label>' +
       '<label class="field" style="grid-column:span 2"><span>Remarks (optional)</span><input class="inp" name="remarks" value="' + esc(e.remarks || '') + '" placeholder="e.g. RCC tram to workshop"></label>' +
       '</div><div class="preview" data-preview></div>' +
       '<div class="row mt" style="justify-content:space-between"><span class="hint">Start = this loader\'s previous End reading (first row uses the opening reading).</span>' +
       '<button class="btn primary" type="submit">' + icon('check') + (entry ? ' Save changes' : ' Save row') + '</button></div></form>';
     const form = $('form', root);
     const pv = $('[data-preview]', root);
+    const mOf = (id) => S.data.machines.find((m) => m.id === id);
+    // Buckets: loaders only; a new row starts from the machine's live counter.
+    let fromCounter = false;
+    function syncBuckets() {
+      const m = mOf(form.elements.machineId.value);
+      const loader = !m || Core.isLoader(m);
+      $('[data-bfield]', form).classList.toggle('hidden', !loader);
+      const inp = form.elements.buckets, src = $('[data-bsrc]', form);
+      if (!loader) { inp.value = ''; fromCounter = false; src.textContent = ''; return; }
+      if (!entry && m && (fromCounter || inp.value === '')) {
+        const n = m.bucketCount || 0;
+        inp.value = n ? n : ''; fromCounter = n > 0;
+        src.textContent = n ? '(counter)' : '';
+      }
+    }
+    form.elements.machineId.addEventListener('change', syncBuckets);
+    form.elements.buckets.addEventListener('input', () => { fromCounter = false; $('[data-bsrc]', form).textContent = ''; });
+    syncBuckets();
 
     function candidate() {
       const f = UI.formData(form);
-      return { id: entry ? entry.id : '__new', siteId: S.siteId, date: f.date, shift: f.shift, machineId: f.machineId, telehut: f.telehut, operator: f.operator, trEnd: f.trEnd, rccEnd: f.rccEnd, createdAt: entry ? entry.createdAt : Date.now() + 1e9 };
+      return { id: entry ? entry.id : '__new', siteId: S.siteId, date: f.date, shift: f.shift, machineId: f.machineId, telehut: f.telehut, operator: f.operator, trEnd: f.trEnd, rccEnd: f.rccEnd, buckets: f.buckets, createdAt: entry ? entry.createdAt : Date.now() + 1e9 };
     }
     function preview() {
       const c = candidate();
@@ -145,7 +214,8 @@
       if (has) check = !r.valid ? '<span class="check-bad">✗ ' + esc(r.issues.join(', ')) + '</span>' : r.warnings.length ? '<span class="check-warn">⚠ ' + esc(r.warnings.join(', ')) + '</span>' : '<span class="check-ok">✓ OK</span>';
       pv.innerHTML = tag('TR start', num1(r.trStart), 'muted') + tag('TR hrs', c.trEnd != null ? num1(r.trHrs) : '–', bad(r.trHrs) ? 'check-bad' : '') +
         tag('RCC start', num1(r.rccStart), 'muted') + tag('RCC hrs', c.rccEnd != null ? num1(r.rccHrs) : '–', bad(r.rccHrs) ? 'check-bad' : '') +
-        tag('Total hrs', has && r.valid ? num1(r.total) : '–') + '<div><div class="l">Check</div><div class="v" style="font-size:14px">' + check + '</div></div>';
+        tag('Total hrs', has && r.valid ? num1(r.total) : '–') + tag('Manual hrs', has && r.valid ? num1(r.manualHrs) : '–') +
+        (r.trucks != null ? tag('Trucks', num1(r.trucks)) : '') + '<div><div class="l">Check</div><div class="v" style="font-size:14px">' + check + '</div></div>';
       $('[name=trEnd]', form).classList.toggle('err', has && bad(r.trHrs));
       $('[name=rccEnd]', form).classList.toggle('err', has && bad(r.rccHrs));
       return r;
@@ -159,6 +229,11 @@
       const f = UI.formData(form);
       if (!f.machineId) return toast('Select a machine', 'err');
       if (f.trEnd == null || f.rccEnd == null) return toast('Enter both end readings', 'err');
+      if (f.buckets != null && !(Number.isInteger(f.buckets) && f.buckets >= 0)) return toast('Buckets must be a whole number', 'err');
+      const m = mOf(f.machineId);
+      if (m && !Core.isLoader(m)) f.buckets = null;
+      // buckets logged for a loader come off its live counter (new rows only)
+      if (!entry && m && Core.isLoader(m) && f.buckets > 0 && (m.bucketCount || 0) > 0) f.takeBuckets = true;
       if (r && !r.valid && !(await confirmBox('This row fails the check (' + r.issues.join(', ') + ') and will be left out of totals. Save anyway?', { okText: 'Save anyway' }))) return;
       try {
         if (entry) await API.put('entries/' + entry.id, f);
@@ -166,7 +241,8 @@
         API.store.set('mhp.lastEntry', JSON.stringify({ shift: f.shift, telehut: f.telehut }));
         toast((entry ? 'Updated ' : 'Saved ') + App.machineName(f.machineId) + ' · ' + f.shift + ' ' + dShort(f.date));
         if (!entry) {
-          ['machineId', 'operator', 'trEnd', 'rccEnd', 'remarks'].forEach((n) => { form.elements[n].value = ''; });
+          ['machineId', 'operator', 'trEnd', 'rccEnd', 'buckets', 'remarks'].forEach((n) => { form.elements[n].value = ''; });
+          fromCounter = false; syncBuckets();
           preview();
           form.elements.machineId.focus();
         }
@@ -191,8 +267,8 @@
     o = o || {};
     if (!rows.length) return '<div class="empty">' + icon('hourglass') + '<div>No rows match.</div></div>';
     return '<div class="tbl-wrap" style="max-height:' + (o.compact ? '360px' : '70vh') + '"><table class="tbl"><thead>' +
-      '<tr><th class="grp" colspan="5"></th><th class="grp" colspan="3">Tele-remote hour meter</th><th class="grp" colspan="3">RCC hour meter</th><th class="grp" colspan="' + (o.compact ? 3 : 5) + '"></th></tr>' +
-      '<tr><th>Date</th><th>Shift</th><th>Machine</th><th>Telehut</th><th>Operator</th><th class="n">Start</th><th class="n">End</th><th class="n">Hrs</th><th class="n">Start</th><th class="n">End</th><th class="n">Hrs</th><th class="n">Total hrs</th><th>Check</th><th>Remarks</th>' +
+      '<tr><th class="grp" colspan="5"></th><th class="grp" colspan="3">Tele-remote hour meter</th><th class="grp" colspan="3">RCC hour meter</th><th class="grp" colspan="' + (o.compact ? 5 : 7) + '"></th></tr>' +
+      '<tr><th>Date</th><th>Shift</th><th>Machine</th><th>Telehut</th><th>Operator</th><th class="n">Start</th><th class="n">End</th><th class="n">Hrs</th><th class="n">Start</th><th class="n">End</th><th class="n">Hrs</th><th class="n">Total hrs</th><th class="n">Manual hrs</th><th class="n">Buckets</th><th>Check</th><th>Remarks</th>' +
       (o.compact ? '' : '<th>Logged by</th><th></th>') + '</tr></thead><tbody>' +
       rows.map((r) => {
         const trBad = r.trHrs != null && r.trHrs < 0, rcBad = r.rccHrs != null && r.rccHrs < 0;
@@ -200,7 +276,8 @@
         return '<tr><td>' + dShort(r.date) + '</td><td>' + esc(r.shift) + '</td><td>' + esc(App.machineName(r.machineId)) + '</td><td>' + esc(r.telehut || '') + '</td><td>' + esc(r.operator || '') + '</td>' +
           '<td class="n auto">' + num1(r.trStart) + '</td><td class="n ' + (trBad ? 'bad' : '') + '">' + num1(r.trEnd) + '</td><td class="n strong ' + (trBad ? 'bad' : '') + '">' + num1(r.trHrs) + '</td>' +
           '<td class="n auto">' + num1(r.rccStart) + '</td><td class="n ' + (rcBad ? 'bad' : '') + '">' + num1(r.rccEnd) + '</td><td class="n strong ' + (rcBad ? 'bad' : '') + '">' + num1(r.rccHrs) + '</td>' +
-          '<td class="n strong">' + (r.valid ? num1(r.total) : '—') + '</td><td>' + chk + '</td><td class="wrap">' + esc(r.remarks || '') + '</td>' +
+          '<td class="n strong">' + (r.valid ? num1(r.total) : '—') + '</td><td class="n">' + (r.manualHrs != null ? num1(r.manualHrs) : '—') + '</td>' +
+          '<td class="n">' + (r.buckets != null ? r.buckets + (r.trucks != null ? '<div class="faint" style="font-size:11px">≈ ' + num1(r.trucks) + ' trucks</div>' : '') : '') + '</td><td>' + chk + '</td><td class="wrap">' + esc(r.remarks || '') + '</td>' +
           (o.compact ? '' : '<td class="muted">' + esc(r.createdByName || '') + '</td><td class="acts">' + (App.canEditEntry(r) ? '<button class="btn icon sm ghost" data-edit="' + r.id + '" title="Edit">' + icon('pencil') + '</button><button class="btn icon sm ghost" data-del="' + r.id + '" title="Delete">' + icon('trash') + '</button>' : '<span class="faint" title="You can change your own rows for ' + App.S.settings.entryEditHours + ' h. Ask a superuser for older rows.">' + icon('shield') + '</span>') + '</td>') + '</tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -248,8 +325,8 @@
         }
       }
       if ('csv' in b.dataset) {
-        const rows = [['Date', 'Shift', 'Machine', 'Telehut', 'Operator', 'TR start', 'TR end', 'TR hrs', 'RCC start', 'RCC end', 'RCC hrs', 'Total hrs', 'Check', 'Remarks', 'Logged by']];
-        shown.forEach((r) => rows.push([r.date, r.shift, App.machineName(r.machineId), r.telehut, r.operator, r.trStart, r.trEnd, r.trHrs, r.rccStart, r.rccEnd, r.rccHrs, r.total, r.needsCheck ? r.issues.concat(r.warnings).join('; ') : 'OK', r.remarks, r.createdByName]));
+        const rows = [['Date', 'Shift', 'Machine', 'Telehut', 'Operator', 'TR start', 'TR end', 'TR hrs', 'RCC start', 'RCC end', 'RCC hrs', 'Total hrs', 'Manual hrs', 'Buckets', 'Trucks', 'Check', 'Remarks', 'Logged by']];
+        shown.forEach((r) => rows.push([r.date, r.shift, App.machineName(r.machineId), r.telehut, r.operator, r.trStart, r.trEnd, r.trHrs, r.rccStart, r.rccEnd, r.rccHrs, r.total, r.manualHrs, r.buckets, r.trucks, r.needsCheck ? r.issues.concat(r.warnings).join('; ') : 'OK', r.remarks, r.createdByName]));
         UI.downloadCSV('shift-log_' + App.site.name.replace(/[^\w-]+/g, '_') + '.csv', rows);
       }
     });

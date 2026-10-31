@@ -11,7 +11,7 @@
   // reads that are kept on the device so the app opens and works without a connection
   const CACHEABLE = /^(bootstrap|notifications|widgets|sites\/[^/]+\/data)$/;
   // writes that can be queued while offline (the rest need a connection)
-  const OFFLINE_OK = /^(sites\/[^/]+\/(entries|messages|announcements|maintenance|operators|telehuts)|(entries|messages|announcements|maintenance|machines|operators|telehuts)\/[^/]+(\/complete)?|widgets(\/[^/]+)?|notifications\/(read|clear))$/;
+  const OFFLINE_OK = /^(sites\/[^/]+\/(entries|messages|announcements|maintenance|operators|telehuts)|(entries|messages|announcements|maintenance|machines|operators|telehuts)\/[^/]+(\/complete|\/buckets)?|widgets(\/[^/]+)?|notifications\/(read|clear))$/;
   const netErr = (m) => Object.assign(new Error(m || 'No connection'), { network: true });
   const listeners = new Set();
   const store = {
