@@ -54,7 +54,7 @@
 
   function siteForm(s) {
     s = s || {};
-    return '<div class="form-grid">' +
+    return '<div class="form-grid two">' +
       '<label class="field full"><span>Site name *</span><input class="inp" name="name" required value="' + esc(s.name || '') + '" placeholder="e.g. Tarkwa Underground"></label>' +
       '<label class="field"><span>Location / area</span><input class="inp" name="location" value="' + esc(s.location || '') + '" placeholder="e.g. Level 3 North"></label>' +
       '<label class="field"><span>Country</span><input class="inp" name="country" value="' + esc(s.country || '') + '"></label>' +

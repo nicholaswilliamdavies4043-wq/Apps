@@ -175,12 +175,12 @@
       '<li><div><b>Get access from IT (once).</b> Click <i>Copy request for IT</i>, paste it into an email to IT. They send back a <b>Client ID</b> and a <b>Client secret</b>.</div></li>' +
       '<li><div><b>Paste the SharePoint site link and the two values from IT below.</b></div></li>' +
       '<li><div><b>Click Test, then Connect.</b> Your data is copied to SharePoint and everyone’s app reloads automatically.</div></li></ol>' +
-      '<div class="form-grid mt">' +
+      '<div class="form-grid two mt">' +
       '<label class="field full"><span>SharePoint site link</span><input class="inp" name="siteUrl" placeholder="https://sandvik.sharepoint.com/sites/MachineHours" value="' + esc(c.siteUrl || '') + '"></label>' +
       '<label class="field"><span>Client ID (from IT)</span><input class="inp" name="clientId" placeholder="00000000-0000-0000-0000-000000000000" value="' + esc(c.clientId || '') + '"></label>' +
       '<label class="field"><span>Client secret (from IT)</span><input class="inp" type="password" name="clientSecret" autocomplete="off" placeholder="' + (c.secretSet ? '•••••• (saved — leave empty to keep)' : '') + '"></label>' +
       '</div>' +
-      '<details class="mt"><summary class="hint" style="cursor:pointer">Advanced</summary><div class="form-grid mt">' +
+      '<details class="mt"><summary class="hint" style="cursor:pointer">Advanced</summary><div class="form-grid two mt">' +
       '<label class="field"><span>Tenant (worked out from the link)</span><input class="inp" name="tenantId" data-tenant placeholder="' + esc(tenantGuess(c.siteUrl) || 'auto') + '" value="' + esc(c.tenantId && c.tenantId !== tenantGuess(c.siteUrl) ? c.tenantId : '') + '"></label>' +
       '<label class="field"><span>List name prefix</span><input class="inp" name="prefix" value="' + esc(c.prefix != null ? c.prefix : 'MHP_') + '"></label></div></details>' +
       '<label class="check mt"><input type="checkbox" name="createLists" checked> Create the lists for me if they don’t exist <span class="hint">(needs “Manage” on the site — otherwise a site owner runs the <a href="#" data-ps1>PowerShell script</a>)</span></label>' +

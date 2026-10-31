@@ -149,8 +149,8 @@
     pane.innerHTML =
       '<div class="chat-head">' + icon('megaphone') + '<div><h3>Announcements</h3><div class="hint">Site-wide notices. Everyone at this site gets a notification.</div></div></div>' +
       '<div class="msgs" style="gap:12px">' +
-      '<form class="card" data-annform style="background:rgba(255,255,255,.04)"><div class="form-grid">' +
-      '<label class="field" style="grid-column:span 2"><span>Title</span><input class="inp" name="title" required placeholder="e.g. Loader 9 back in service"></label>' +
+      '<form class="card" data-annform style="background:rgba(255,255,255,.04)"><div class="form-grid ann-grid">' +
+      '<label class="field ann-title"><span>Title</span><input class="inp" name="title" required placeholder="e.g. Loader 9 back in service"></label>' +
       '<label class="field"><span>Priority</span><select class="inp" name="priority"><option value="info">Info</option><option value="important">Important</option><option value="critical" data-perm="super">Critical (always emailed)</option></select></label>' +
       '<label class="field"><span>Show until (optional)</span><input class="inp" type="datetime-local" name="expiresLocal"></label>' +
       '<label class="field full"><span>Message</span><textarea class="inp" name="body" rows="3"></textarea></label></div>' +
