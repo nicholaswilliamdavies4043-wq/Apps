@@ -9,9 +9,11 @@ This app can use Render PostgreSQL for persistent storage. The existing data mod
 3. Set **Build Command** to `npm install`.
 4. Set **Start Command** to `npm start`.
 5. In the service's **Environment** settings, add:
-   - `STORAGE` = `postgres`
    - `DATABASE_URL` = the connection URL copied from your Render PostgreSQL database. Keep this value secret.
+   - `STORAGE` = `postgres` (optional: when `DATABASE_URL` is set and `STORAGE` is not, PostgreSQL is used automatically).
 6. Prefer the database's **Internal Database URL** when the web service and database are in the same Render region.
+   TLS is chosen automatically: off for the Internal URL (private host such as `dpg-xxxx-a`) and for localhost,
+   on for the External URL. Override with `DATABASE_SSL=true` or `DATABASE_SSL=false` if needed.
 7. Save changes and redeploy.
 
 The app creates its table automatically. On first startup, if the table has no row, it seeds PostgreSQL from the current local `data/db.json` file (if present). On later startups, PostgreSQL is the source of truth and its saved data is loaded into the local cache.
