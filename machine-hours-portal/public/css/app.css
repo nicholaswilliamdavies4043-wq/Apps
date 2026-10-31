@@ -239,6 +239,10 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .field { display: grid; gap: 5px; min-width: 0; }
 .field > span { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .field.full { grid-column: 1 / -1; }
+/* Two-column form: with auto-fit, a .full field keeps every empty track alive and squeezes the others. */
+.form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* Announcement composer: title | priority | "show until" (date + time needs ~200px). */
+.form-grid.ann-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(200px, 1.3fr); }
 .inp, select.inp, textarea.inp {
   width: 100%; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.15);
   outline: none; transition: border-color .2s, box-shadow .2s, background .2s; min-height: 42px;
@@ -247,6 +251,11 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .inp.in { background: rgba(160,140,100,.12); border-color: rgba(160,140,100,.4); }
 .inp.err { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(255,100,100,.2); }
 .inp[readonly] { color: var(--muted); background: rgba(255,255,255,.03); border-style: dashed; }
+/* One height for every single-line control (date/datetime/select render at different natural heights),
+   and let date/time inputs shrink to their grid cell instead of overflowing into the next field. */
+input.inp:not([type=color]), select.inp { height: 42px; min-height: 42px; }
+.inp { min-width: 0; max-width: 100%; }
+input.inp[type=date], input.inp[type=time], input.inp[type=datetime-local], input.inp[type=month] { line-height: 20px; padding-left: 10px; padding-right: 8px; }
 select.inp option, select.inp optgroup { background: #0d1f35; color: var(--text); }
 textarea.inp { resize: vertical; min-height: 80px; }
 input[type=color].inp { padding: 4px; height: 42px; }
@@ -519,6 +528,7 @@ input[type=checkbox] { accent-color: var(--sv-gold); width: 16px; height: 16px; 
   .kpi .v { font-size: 24px; }
   .card { padding: 14px; border-radius: 14px; }
   .form-grid { grid-template-columns: 1fr 1fr; }
+  .form-grid.ann-grid { grid-template-columns: minmax(0, 1fr); }
   .meters { grid-template-columns: 1fr 1fr; }
   .link-row { grid-template-columns: 1fr; }
   .modal-b, .modal-h, .modal-f { padding-left: 14px; padding-right: 14px; }

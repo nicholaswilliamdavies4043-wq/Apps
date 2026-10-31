@@ -275,7 +275,7 @@
       '<div class="card kpi ' + (c('soon') ? 'warn' : '') + '" style="--c:var(--warn)"><div class="l">' + icon('clock') + 'Due soon</div><div class="v">' + c('soon') + '</div></div>' +
       '<div class="card kpi" style="--c:var(--ok)"><div class="l">' + icon('check') + 'On track</div><div class="v">' + c('ok') + '</div></div>' +
       '<div class="card kpi" style="--c:var(--sv-gold)"><div class="l">' + icon('wrench') + 'Completed (30 d)</div><div class="v">' + logs.filter((l) => l.doneAt > since).length + '</div></div></div>' +
-      '<div class="row mt" style="justify-content:space-between"><div class="filters"><label class="field"><span>Machine</span><select class="inp" data-mf>' + opts(S.data.machines.map((m) => [m.id, m.name]), maintFilter.machine, 'All machines') + '</select></label></div>' +
+      '<div class="row mt" style="justify-content:space-between;align-items:flex-end"><div class="filters"><label class="field"><span>Machine</span><select class="inp" data-mf>' + opts(S.data.machines.map((m) => [m.id, m.name]), maintFilter.machine, 'All machines') + '</select></label></div>' +
       '<button class="btn primary" data-perm="maintCreate" data-newm>' + icon('plus') + ' Schedule maintenance</button></div>' +
       '<div class="stack mt">' + (all.length ? all.map(({ m, st }) =>
         '<div class="card maint-card ' + st.status + '">' + ring(st.pct, stColor(st.status), Math.round(st.pct * 100) + '%', 74) +
@@ -328,7 +328,7 @@
         '</div>' +
         '<div class="grid g-2 mt">' +
         '<div class="card" style="background:rgba(255,255,255,.03)"><label class="check"><input type="checkbox" data-bydate ' + (byDate ? 'checked' : '') + '> <b>Due by date</b></label>' +
-        '<div class="form-grid mt" data-datebox><label class="field"><span>Due date &amp; time</span><input class="inp" type="datetime-local" name="dueAtLocal" value="' + UI.toLocalInput(m.dueAt || (Date.now() + 7 * Core.DAY)) + '"></label>' +
+        '<div class="form-grid mt" data-datebox><label class="field full"><span>Due date &amp; time</span><input class="inp" type="datetime-local" name="dueAtLocal" value="' + UI.toLocalInput(m.dueAt || (Date.now() + 7 * Core.DAY)) + '"></label>' +
         '<label class="field"><span>Repeat every (days)</span><input class="inp" type="number" min="0" name="intervalDays" value="' + (m.intervalDays || '') + '" placeholder="one-off"></label>' +
         '<label class="field"><span>Warn days before</span><input class="inp" type="number" min="0" name="leadDays" value="' + (m.leadDays != null ? m.leadDays : '') + '" placeholder="' + (site.leadDays != null ? site.leadDays : 3) + ' (site default)"></label></div></div>' +
         '<div class="card" style="background:rgba(255,255,255,.03)"><label class="check"><input type="checkbox" data-byhours ' + (byHours ? 'checked' : '') + '> <b>Due by hour meter</b></label>' +
